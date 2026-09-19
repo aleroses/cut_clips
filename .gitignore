@@ -1,0 +1,29 @@
+# Byte-compiled / Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Entornos virtuales
+venv/
+.venv/
+env/
+
+# Caché de traducciones de DeepL
+**/translations_cache.json
+
+# Omitir todo el contenido dentro de carpetas de episodios (ej: S01E01, S01E02, etc.)
+data/*/*/*
+# O si prefieres ignorar el contenido de cualquier carpeta de episodio directamente:
+# data/**/S[0-9][0-9]E[0-9][0-9]/*
+
+# Omitir archivos pesados o de salida por extensión (como respaldo)
+*.mkv
+*.mp4
+*.tsv
+*.csv
+*.srt
+
+# Archivos de configuración local o de sistema
+.DS_Store
+.vscode/
+.idea/

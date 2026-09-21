@@ -18,6 +18,7 @@ Uso:
 """
 
 import argparse
+import os
 
 from core.subtitle_parser import generate_sentences, write_sentences_csv
 
@@ -51,6 +52,12 @@ def main():
                               "inicio de la primera línea (que queda anclado sin modificar). "
                               "Usa un valor negativo para restar tiempo, ej. -0.4 para restar "
                               "400ms a todo salvo el primer inicio (default: 0.0)")
+    parser.add_argument("--language", default="en",
+                         help="Código de idioma del subtítulo (ej: en, es, fr, de, it, ja, "
+                              "zh). Ajusta reglas de normalización específicas del idioma "
+                              "(hoy: capitalización del pronombre 'I' solo en inglés, y el "
+                              "espacio antes de puntuación se desactiva automáticamente para "
+                              "francés). Default: en")
     args = parser.parse_args()
 
     result = generate_sentences(
@@ -62,6 +69,7 @@ def main():
         shift=args.shift,
         min_duration=args.min_duration,
         min_words=args.min_words,
+        language=args.language,
     )
 
     write_sentences_csv(args.output, result["sentences"])

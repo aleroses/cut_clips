@@ -120,6 +120,7 @@ def main():
     jobs, tsv_rows, video_skipped, audio_skipped, invalid_lines = validate_and_build_jobs(
         sentences, windows, args.series_name, args.episode_label, args.output_dir,
         want_video, want_audio, args.overwrite, start_index=args.start_index,
+        episode_title=episode_title or "",
     )
 
     if invalid_lines:
@@ -158,7 +159,7 @@ def main():
             sys.exit(1)
 
         cache_path = args.translation_cache or f"{args.series_name}_translations_cache.json"
-        all_texts = [text for _, text, _, _, _ in tsv_rows]
+        all_texts = [text for _, text, _, _, _, _ in tsv_rows]
         translations = translate_texts(all_texts, api_key, args.target_lang, cache_path)
 
     write_anki_tsv(args.tsv_out, tsv_rows, translations)

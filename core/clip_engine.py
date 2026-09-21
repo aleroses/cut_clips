@@ -230,10 +230,10 @@ def build_single_pass_command(video_path, jobs, width, height, crf,
 
 def validate_and_build_jobs(sentences, windows, series_name, episode_label,
                              output_dir, want_video, want_audio,
-                             overwrite, start_index=1):
+                             overwrite, start_index=1, episode_title=""):
     """Recorre sentences+windows y arma:
         - jobs: lo que realmente hay que generar en esta corrida
-        - tsv_rows: (id, text, video_filename, audio_filename, episode_label)
+        - tsv_rows: (id, text, video_filename, audio_filename, episode_label, episode_title)
           para TODAS las líneas (independiente de si se generan en esta corrida)
         - video_skipped / audio_skipped: contadores
         - invalid_lines: líneas con end<=start, excluidas de 'jobs'
@@ -251,7 +251,8 @@ def validate_and_build_jobs(sentences, windows, series_name, episode_label,
         video_path = os.path.join(output_dir, video_filename)
         audio_path = os.path.join(output_dir, audio_filename)
 
-        tsv_rows.append((i, sentence["text"], video_filename, audio_filename, episode_label))
+        tsv_rows.append((i, sentence["text"], video_filename, audio_filename,
+                          episode_label, episode_title))
 
         if end - start < MIN_DURATION:
             invalid_lines.append((i, start, end, sentence["text"]))
@@ -315,19 +316,20 @@ def run_batch(video_path, jobs, width, height, crf, audio_bitrate, mp3_bitrate):
 
 
 def write_anki_tsv(tsv_path, tsv_rows, translations):
-    """Escribe el TSV con los 8 campos de la nota Anki:
-    id | episode | video | video_reference | video_audio | english_dialogs |
-    spanish_dialogues | notes (vacío)"""
+    """Escribe el TSV con los 9 campos de la nota Anki:
+    id | episode | episode_title | video | video_reference | video_audio |
+    english_dialogs | spanish_dialogues | notes (vacío)"""
     with open(tsv_path, "w", encoding="utf-8", newline="") as f:
-        for i, text, video_filename, audio_filename, episode_label in tsv_rows:
+        for i, text, video_filename, audio_filename, episode_label, episode_title in tsv_rows:
             translation = translations.get(text, "")
             video_field = video_filename
             video_reference_field = f"[sound:{video_filename}]"
             video_audio_field = f"[sound:{audio_filename}]"
             notes_field = ""
             f.write(
-                f"{i:04d}\t{episode_label}\t{video_field}\t{video_reference_field}\t"
-                f"{video_audio_field}\t{text}\t{translation}\t{notes_field}\n"
+                f"{i:04d}\t{episode_label}\t{episode_title}\t{video_field}\t"
+                f"{video_reference_field}\t{video_audio_field}\t{text}\t"
+                f"{translation}\t{notes_field}\n"
             )
 
 
@@ -337,10 +339,10 @@ def compute_media_sizes(tsv_rows, output_dir):
         return sum(os.path.getsize(p) for p in paths if os.path.exists(p))
 
     video_size_mb = total_size(
-        os.path.join(output_dir, vf) for _, _, vf, _, _ in tsv_rows
+        os.path.join(output_dir, vf) for _, _, vf, _, _, _ in tsv_rows
     ) / (1024 * 1024)
     audio_size_mb = total_size(
-        os.path.join(output_dir, af) for _, _, _, af, _ in tsv_rows
+        os.path.join(output_dir, af) for _, _, _, af, _, _ in tsv_rows
     ) / (1024 * 1024)
     return video_size_mb, audio_size_mb
 

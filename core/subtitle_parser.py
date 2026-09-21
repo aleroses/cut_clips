@@ -74,32 +74,59 @@ def parse_srt_blocks(path, offset=0.0, scale=1.0):
     return blocks
 
 
-def clean_text(raw_text):
-    """Quita etiquetas (efectos de sonido / hablante) entre () y []."""
+def clean_text(raw_text, fix_punctuation_spacing=True):
+    """Quita etiquetas (efectos de sonido / hablante) entre () y [].
+
+    fix_punctuation_spacing: en inglés/español, el SDH suele dejar un
+    espacio antes de la puntuación (ej. "again ?") que hay que quitar. En
+    FRANCÉS esto es INCORRECTO: la tipografía francesa exige un espacio
+    antes de ? ! ; : — por eso este comportamiento es configurable en vez
+    de aplicarse siempre.
+    """
     cleaned = re.sub(r"\([^)]*\)", "", raw_text)
     cleaned = re.sub(r"\[[^\]]*\]", "", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    # El SDH suele dejar un espacio antes de la puntuación (ej. "again ?").
-    # Lo quitamos para que quede "again?" como se escribe normalmente.
-    cleaned = re.sub(r"\s+([?.!,;:])", r"\1", cleaned)
+    if fix_punctuation_spacing:
+        cleaned = re.sub(r"\s+([?.!,;:])", r"\1", cleaned)
     return cleaned
 
 
-def normalize_case(text):
-    """ALL CAPS -> sentence case. Limitación conocida: nombres propios
-    quedarán en minúscula salvo que empiecen oración; se puede mejorar
-    luego con una lista de excepciones (nombres de personajes, etc.)."""
+def is_mostly_uppercase(text, threshold=0.6):
+    """True si el texto parece estar en ALL CAPS (SDH). Evita normalizar
+    texto que ya viene en case normal (subtítulos no-SDH, o de idiomas/
+    releases que no usan esa convención)."""
+    letters = [c for c in text if c.isalpha()]
+    if not letters:
+        return False
+    upper_count = sum(1 for c in letters if c.isupper())
+    return (upper_count / len(letters)) > threshold
+
+
+def normalize_case(text, language="en"):
+    """ALL CAPS -> sentence case, SOLO si el texto realmente está en
+    mayúsculas (ver is_mostly_uppercase). Si ya viene en case normal, se
+    devuelve sin tocar.
+
+    language: la regla de capitalizar el pronombre "i" -> "I" es
+    específica del inglés y solo se aplica cuando language == "en".
+    Limitación conocida: nombres propios quedarán en minúscula salvo que
+    empiecen oración; se puede mejorar luego con una lista de excepciones."""
+    if not is_mostly_uppercase(text):
+        return text
+
     text = text.lower()
 
-    # "i" / "i'm" / "i've" / "i'll" / "i'd" -> "I" / "I'm" / ...
-    text = re.sub(r"\bi\b", "I", text)
-    text = re.sub(r"\bi'(m|ve|ll|d)\b", lambda m: "I'" + m.group(1), text)
+    if language == "en":
+        # "i" / "i'm" / "i've" / "i'll" / "i'd" -> "I" / "I'm" / ...
+        text = re.sub(r"\bi\b", "I", text)
+        text = re.sub(r"\bi'(m|ve|ll|d)\b", lambda m: "I'" + m.group(1), text)
 
-    # Mayúscula al inicio del texto y después de . ! ?
+    # Mayúscula al inicio del texto y después de . ! ? (genérico, válido
+    # para cualquier idioma con escritura en alfabeto latino/cirílico/etc.)
     def cap(match):
         return match.group(1) + match.group(2).upper()
 
-    text = re.sub(r"(^|[.!?]\s+)([a-z])", cap, text)
+    text = re.sub(r"(^|[.!?]\s+)([a-zà-ÿ])", cap, text)
     return text
 
 
@@ -122,7 +149,8 @@ def apply_boundary_trim(start, end, trim_start, trim_end, min_duration=0.3):
     return new_start, new_end
 
 
-def group_into_sentences(blocks, trim_start=0.0, trim_end=0.0):
+def group_into_sentences(blocks, trim_start=0.0, trim_end=0.0,
+                          language="en", fix_punctuation_spacing=True):
     """Agrupa bloques consecutivos hasta encontrar puntuación de cierre.
     Descarta bloques que quedan vacíos tras limpiar (solo efectos de sonido).
     Aplica trim_start/trim_end a los límites de cada oración ya agrupada.
@@ -135,7 +163,7 @@ def group_into_sentences(blocks, trim_start=0.0, trim_end=0.0):
     buffer_end = None
 
     for block in blocks:
-        cleaned = clean_text(block["raw_text"])
+        cleaned = clean_text(block["raw_text"], fix_punctuation_spacing=fix_punctuation_spacing)
 
         if not cleaned:
             discarded += 1
@@ -155,7 +183,7 @@ def group_into_sentences(blocks, trim_start=0.0, trim_end=0.0):
             sentences.append({
                 "start": trimmed_start,
                 "end": trimmed_end,
-                "text": normalize_case(combined),
+                "text": normalize_case(combined, language=language),
             })
             buffer_parts = []
             buffer_start = None
@@ -169,7 +197,7 @@ def group_into_sentences(blocks, trim_start=0.0, trim_end=0.0):
         sentences.append({
             "start": trimmed_start,
             "end": trimmed_end,
-            "text": normalize_case(combined),
+            "text": normalize_case(combined, language=language),
         })
 
     return sentences, discarded
@@ -215,22 +243,27 @@ def filter_sentences(sentences, min_duration=0.0, min_words=0):
 
 def generate_sentences(srt_path, offset=0.0, scale=1.0,
                         trim_start=0.0, trim_end=0.0, shift=0.0,
-                        min_duration=0.0, min_words=0):
+                        min_duration=0.0, min_words=0,
+                        language="en", fix_punctuation_spacing=None):
     """Función de alto nivel: .srt -> lista final de oraciones lista para
     usar (ya agrupadas, corregidas y filtradas). Devuelve un dict con
-    todo lo necesario para reportar estadísticas, igual que hacía la CLI:
+    todo lo necesario para reportar estadísticas, igual que hacía la CLI.
 
-        {
-            "sentences": [...],       # ya filtradas, listas para exportar
-            "total_blocks": int,
-            "discarded_blocks": int,  # solo efectos de sonido
-            "total_sentences": int,   # antes de aplicar min_duration/min_words
-            "skipped_by_filter": int,
-        }
+    language: controla reglas de normalización específicas de idioma
+    (hoy solo afecta la capitalización del pronombre "i" en inglés).
+
+    fix_punctuation_spacing: si es None (default), se decide automática-
+    mente según 'language' (desactivado para "fr", activado para el
+    resto, ya que el francés SÍ requiere espacio antes de ?!;: ). Pasa
+    True/False explícitamente para forzar el comportamiento.
     """
+    if fix_punctuation_spacing is None:
+        fix_punctuation_spacing = (language != "fr")
+
     blocks = parse_srt_blocks(srt_path, offset=offset, scale=scale)
     sentences, discarded = group_into_sentences(
-        blocks, trim_start=trim_start, trim_end=trim_end
+        blocks, trim_start=trim_start, trim_end=trim_end,
+        language=language, fix_punctuation_spacing=fix_punctuation_spacing,
     )
     sentences = apply_global_shift(sentences, shift)
 

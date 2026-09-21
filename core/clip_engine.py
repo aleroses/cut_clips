@@ -151,13 +151,19 @@ def compute_padded_windows(sentences, padding):
 # ---------------------------------------------------------------------------
 
 def build_single_pass_command(video_path, jobs, width, height, crf,
-                               webm_audio_bitrate, mp3_bitrate, max_time):
+                               webm_audio_bitrate, mp3_bitrate, max_time,
+                               audio_track=0, video_track=0):
     """jobs: lista de dicts con:
         index, start, end, need_video, need_audio, video_path, audio_path
     Construye UN comando ffmpeg que decodifica el vídeo una sola vez y
     produce todos los .webm y .mp3 necesarios de esa misma pasada, usando
     split/asplit + trim/atrim. Vídeo y audio de una misma línea usan
     exactamente el mismo start/end.
+
+    audio_track/video_track: índice RELATIVO de la pista a usar (0 = la
+    primera pista de ese tipo, 1 = la segunda, etc.) — útil cuando el
+    archivo trae audio en varios idiomas. Usa inspect_media.py para ver
+    qué pistas hay disponibles antes de elegir el índice.
     """
     video_jobs = [j for j in jobs if j["need_video"]]
     audio_jobs = [j for j in jobs if j["need_audio"]]
@@ -169,7 +175,7 @@ def build_single_pass_command(video_path, jobs, width, height, crf,
     audio_labels = [f"a{n}" for n in range(total_audio_branches)]
     if audio_labels:
         filter_parts.append(
-            "[0:a:0]asplit=" + str(len(audio_labels)) +
+            f"[0:a:{audio_track}]asplit=" + str(len(audio_labels)) +
             "".join(f"[{lbl}]" for lbl in audio_labels)
         )
     label_pos = 0
@@ -177,7 +183,7 @@ def build_single_pass_command(video_path, jobs, width, height, crf,
     if video_jobs:
         vlabels = [f"v{j['index']}" for j in video_jobs]
         filter_parts.append(
-            "[0:v:0]split=" + str(len(video_jobs)) +
+            f"[0:v:{video_track}]split=" + str(len(video_jobs)) +
             "".join(f"[{lbl}]" for lbl in vlabels)
         )
 
@@ -280,7 +286,8 @@ def validate_and_build_jobs(sentences, windows, series_name, episode_label,
     return jobs, tsv_rows, video_skipped, audio_skipped, invalid_lines
 
 
-def run_batch(video_path, jobs, width, height, crf, audio_bitrate, mp3_bitrate):
+def run_batch(video_path, jobs, width, height, crf, audio_bitrate, mp3_bitrate,
+              audio_track=0, video_track=0):
     """Ejecuta el comando de pasada única para 'jobs'. Devuelve
     (video_generated, video_errors, audio_generated, audio_errors, error_message)."""
     video_generated = video_errors = 0
@@ -292,7 +299,8 @@ def run_batch(video_path, jobs, width, height, crf, audio_bitrate, mp3_bitrate):
 
     max_time = max(j["end"] for j in jobs) + 1.0
     cmd = build_single_pass_command(
-        video_path, jobs, width, height, crf, audio_bitrate, mp3_bitrate, max_time
+        video_path, jobs, width, height, crf, audio_bitrate, mp3_bitrate, max_time,
+        audio_track=audio_track, video_track=video_track,
     )
     result = subprocess.run(cmd, capture_output=True, text=True)
 
@@ -353,7 +361,8 @@ def compute_media_sizes(tsv_rows, output_dir):
 
 def cut_single_clip(video_path, start, end, output_path, media="both",
                      width=640, height=480, crf=32,
-                     webm_audio_bitrate="96k", mp3_audio_bitrate="128k"):
+                     webm_audio_bitrate="96k", mp3_audio_bitrate="128k",
+                     audio_track=0, video_track=0):
     """Corta UN solo clip usando salto rápido (-ss antes de -i) + trim/atrim
     para precisión exacta, sin decodificar el episodio completo. Pensado
     para el botón "Cortar" de la GUI interactiva (Fase 2), donde el usuario
@@ -363,6 +372,9 @@ def cut_single_clip(video_path, start, end, output_path, media="both",
            "audio" -> genera solo el .mp3 en output_path
            "both"  -> requiere que output_path sea la ruta SIN extensión;
                       genera output_path+".webm" y output_path+".mp3"
+
+    audio_track/video_track: índice relativo de la pista a usar (ver
+    build_single_pass_command).
 
     Devuelve (success: bool, stderr: str).
     """
@@ -376,9 +388,9 @@ def cut_single_clip(video_path, start, end, output_path, media="both",
             "-ss", f"{coarse_seek:.3f}", "-i", video_path,
             "-filter_complex",
             (
-                f"[0:v:0]trim=start={fine_seek:.3f}:duration={duration:.3f},"
+                f"[0:v:{video_track}]trim=start={fine_seek:.3f}:duration={duration:.3f},"
                 f"setpts=PTS-STARTPTS,scale={width}:{height}[vout];"
-                f"[0:a:0]atrim=start={fine_seek:.3f}:duration={duration:.3f},"
+                f"[0:a:{audio_track}]atrim=start={fine_seek:.3f}:duration={duration:.3f},"
                 f"asetpts=PTS-STARTPTS[aout]"
             ),
             "-map", "[vout]", "-map", "[aout]",
@@ -397,7 +409,7 @@ def cut_single_clip(video_path, start, end, output_path, media="both",
             "-ss", f"{coarse_seek:.3f}", "-i", video_path,
             "-filter_complex",
             (
-                f"[0:a:0]atrim=start={fine_seek:.3f}:duration={duration:.3f},"
+                f"[0:a:{audio_track}]atrim=start={fine_seek:.3f}:duration={duration:.3f},"
                 f"asetpts=PTS-STARTPTS[aout]"
             ),
             "-map", "[aout]",
@@ -412,10 +424,11 @@ def cut_single_clip(video_path, start, end, output_path, media="both",
         ok_v, err_v = cut_single_clip(
             video_path, start, end, output_path + ".webm", media="video",
             width=width, height=height, crf=crf, webm_audio_bitrate=webm_audio_bitrate,
+            audio_track=audio_track, video_track=video_track,
         )
         ok_a, err_a = cut_single_clip(
             video_path, start, end, output_path + ".mp3", media="audio",
-            mp3_audio_bitrate=mp3_audio_bitrate,
+            mp3_audio_bitrate=mp3_audio_bitrate, audio_track=audio_track,
         )
         return (ok_v and ok_a), (err_v + err_a)
 

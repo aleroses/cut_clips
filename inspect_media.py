@@ -81,6 +81,8 @@ def get_episode_title(data):
 
 def classify_streams(data):
     video, audio, subtitles = [], [], []
+    audio_rel = 0
+    subtitle_rel = 0
     for s in data.get("streams", []):
         kind = s.get("codec_type")
         entry = {
@@ -94,11 +96,15 @@ def classify_streams(data):
             video.append(entry)
         elif kind == "audio":
             entry["channels"] = s.get("channels", "?")
+            entry["relative_index"] = audio_rel  # el N que usa ffmpeg en 0:a:N
+            audio_rel += 1
             audio.append(entry)
         elif kind == "subtitle":
             codec = entry["codec_name"]
             entry["is_text"] = codec in TEXT_SUBTITLE_CODECS
             entry["is_image"] = codec in IMAGE_SUBTITLE_CODECS
+            entry["relative_index"] = subtitle_rel  # el N que usa ffmpeg en 0:s:N
+            subtitle_rel += 1
             subtitles.append(entry)
     return video, audio, subtitles
 
@@ -120,8 +126,8 @@ def print_report(video_path, data, language):
     print("\nAUDIO:")
     for a in audio:
         marker = "  <-- coincide con --language" if language_matches(a["language"], language) else ""
-        print(f"  [{a['index']}] {a['codec_name']}  idioma={a['language']}  "
-              f"canales={a['channels']}  título=\"{a['title']}\"{marker}")
+        print(f"  [abs={a['index']}, audio_track={a['relative_index']}] {a['codec_name']}  "
+              f"idioma={a['language']}  canales={a['channels']}  título=\"{a['title']}\"{marker}")
 
     print("\nSUBTÍTULOS:")
     if not subtitles:
@@ -135,8 +141,13 @@ def print_report(video_path, data, language):
         else:
             kind = f"desconocido ({s['codec_name']})"
         marker = "  <-- coincide con --language" if language_matches(s["language"], language) else ""
-        print(f"  [{s['index']}] {s['codec_name']}  idioma={s['language']}  "
+        print(f"  [abs={s['index']}] {s['codec_name']}  idioma={s['language']}  "
               f"título=\"{s['title']}\"  -> {kind}{marker}")
+
+    if len(audio) > 1:
+        print(f"\n[INFO] Hay {len(audio)} pistas de audio. Usa --audio-track N en "
+              f"cut_clips.py con el número 'audio_track' de arriba (no el 'abs') "
+              f"para elegir cuál usar.")
 
     # Sugerencia automática
     text_matches = [s for s in subtitles if s["is_text"] and language_matches(s["language"], language)]

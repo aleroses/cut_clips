@@ -67,6 +67,13 @@ def main():
                          help="Bitrate del audio EMBEBIDO en el .webm (default: 96k)")
     parser.add_argument("--mp3-bitrate", default="128k",
                          help="Bitrate del .mp3 independiente (default: 128k)")
+    parser.add_argument("--audio-track", type=int, default=0,
+                         help="Índice RELATIVO de la pista de audio a usar (0 = primera, "
+                              "1 = segunda, etc.). Útil si el .mkv trae varios idiomas de "
+                              "audio. Usa inspect_media.py para ver las pistas disponibles. "
+                              "(default: 0)")
+    parser.add_argument("--video-track", type=int, default=0,
+                         help="Índice RELATIVO de la pista de vídeo a usar (default: 0)")
     parser.add_argument("--limit", type=int, default=None,
                          help="Procesar solo las primeras N líneas (prueba rápida)")
     parser.add_argument("--start-index", type=int, default=1,
@@ -144,6 +151,7 @@ def main():
         video_generated, video_errors, audio_generated, audio_errors, error_message = run_batch(
             args.video, jobs, args.width, args.height, args.crf,
             args.audio_bitrate, args.mp3_bitrate,
+            audio_track=args.audio_track, video_track=args.video_track,
         )
         if error_message:
             print("\n[ERROR] ffmpeg falló en la pasada completa:")

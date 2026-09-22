@@ -38,6 +38,7 @@ from core.clip_engine import (
     extract_episode_title,
     sanitize_filename_component,
 )
+from core.naming import tsv_filename
 
 
 def main():
@@ -104,11 +105,11 @@ def main():
     if episode_title:
         print(f"Título del episodio: \"{episode_title}\" ({title_source})")
         title_slug = sanitize_filename_component(episode_title)
-        default_tsv_name = f"{args.series_name}_{args.episode_label}_{title_slug}_anki.tsv"
+        default_tsv_name = tsv_filename(args.series_name, args.episode_label, title_slug)
     else:
         print("Título del episodio: no detectado ni proporcionado (--episode-title), "
               "se omite del nombre del TSV.")
-        default_tsv_name = f"{args.series_name}_{args.episode_label}_anki.tsv"
+        default_tsv_name = tsv_filename(args.series_name, args.episode_label)
 
     if args.tsv_out is None:
         args.tsv_out = default_tsv_name

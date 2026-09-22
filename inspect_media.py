@@ -36,77 +36,15 @@ Uso:
 
 import argparse
 import json
-import subprocess
 import sys
 
-TEXT_SUBTITLE_CODECS = {"subrip", "ass", "ssa", "mov_text", "webvtt"}
-IMAGE_SUBTITLE_CODECS = {"hdmv_pgs_subtitle", "dvd_subtitle", "xsub"}
-
-# ffprobe reporta idiomas en ISO 639-2 (3 letras), pero es más natural que
-# el usuario escriba el código de 2 letras (ISO 639-1). Mapeamos los más
-# comunes; si el usuario ya escribe el de 3 letras, también funciona.
-LANGUAGE_ALIASES = {
-    "en": {"eng"}, "es": {"spa"}, "fr": {"fre", "fra"}, "de": {"ger", "deu"},
-    "it": {"ita"}, "pt": {"por"}, "ja": {"jpn"}, "zh": {"chi", "zho"},
-    "ko": {"kor"}, "ru": {"rus"}, "nl": {"dut", "nld"}, "sv": {"swe"},
-    "pl": {"pol"}, "ar": {"ara"},
-}
-
-
-def language_matches(stream_lang, requested_lang):
-    """Compara el idioma de una pista (código de 3 letras de ffprobe) con
-    lo que pidió el usuario, aceptando tanto 2 como 3 letras de su parte."""
-    stream_lang = (stream_lang or "").lower()
-    requested_lang = (requested_lang or "").lower()
-    if stream_lang == requested_lang:
-        return True
-    return stream_lang in LANGUAGE_ALIASES.get(requested_lang, set())
-
-
-def probe(video_path):
-    result = subprocess.run(
-        ["ffprobe", "-v", "error", "-print_format", "json",
-         "-show_format", "-show_streams", video_path],
-        capture_output=True, text=True,
-    )
-    if result.returncode != 0:
-        print(f"[ERROR] ffprobe falló:\n{result.stderr}", file=sys.stderr)
-        sys.exit(1)
-    return json.loads(result.stdout)
-
-
-def get_episode_title(data):
-    return data.get("format", {}).get("tags", {}).get("title", "")
-
-
-def classify_streams(data):
-    video, audio, subtitles = [], [], []
-    audio_rel = 0
-    subtitle_rel = 0
-    for s in data.get("streams", []):
-        kind = s.get("codec_type")
-        entry = {
-            "index": s["index"],
-            "codec_name": s.get("codec_name", "?"),
-            "language": s.get("tags", {}).get("language", "?"),
-            "title": s.get("tags", {}).get("title", ""),
-        }
-        if kind == "video":
-            entry["resolution"] = f"{s.get('width', '?')}x{s.get('height', '?')}"
-            video.append(entry)
-        elif kind == "audio":
-            entry["channels"] = s.get("channels", "?")
-            entry["relative_index"] = audio_rel  # el N que usa ffmpeg en 0:a:N
-            audio_rel += 1
-            audio.append(entry)
-        elif kind == "subtitle":
-            codec = entry["codec_name"]
-            entry["is_text"] = codec in TEXT_SUBTITLE_CODECS
-            entry["is_image"] = codec in IMAGE_SUBTITLE_CODECS
-            entry["relative_index"] = subtitle_rel  # el N que usa ffmpeg en 0:s:N
-            subtitle_rel += 1
-            subtitles.append(entry)
-    return video, audio, subtitles
+from media.probe import (
+    classify_streams,
+    extract_subtitle,
+    get_episode_title,
+    language_matches,
+    probe,
+)
 
 
 def print_report(video_path, data, language):
@@ -164,15 +102,6 @@ def print_report(video_path, data, language):
               f"OCR todavía, necesitarías un .srt/.vtt de otra fuente.")
 
 
-def extract_subtitle(video_path, stream_index, output_path):
-    cmd = ["ffmpeg", "-y", "-i", video_path, "-map", f"0:{stream_index}", output_path]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"[ERROR] No se pudo extraer la pista {stream_index}:\n{result.stderr}", file=sys.stderr)
-        sys.exit(1)
-    print(f"Subtítulo extraído: {output_path}")
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("video", help="Ruta al archivo de vídeo (.mkv, .mp4, etc.)")
@@ -198,6 +127,7 @@ def main():
             print("[ERROR] --extract-subtitle requiere -o/--output", file=sys.stderr)
             sys.exit(1)
         extract_subtitle(args.video, args.extract_subtitle, args.output)
+        print(f"Subtítulo extraído: {args.output}")
     else:
         print_report(args.video, data, args.language)
 

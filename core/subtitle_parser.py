@@ -161,8 +161,9 @@ def group_into_sentences(blocks, trim_start=0.0, trim_end=0.0,
     buffer_parts = []
     buffer_start = None
     buffer_end = None
+    buffer_cue_indices = []
 
-    for block in blocks:
+    for block_idx, block in enumerate(blocks):
         cleaned = clean_text(block["raw_text"], fix_punctuation_spacing=fix_punctuation_spacing)
 
         if not cleaned:
@@ -173,6 +174,7 @@ def group_into_sentences(blocks, trim_start=0.0, trim_end=0.0,
             buffer_start = block["start"]
 
         buffer_parts.append(cleaned)
+        buffer_cue_indices.append(block_idx)
         buffer_end = block["end"]
 
         if SENTENCE_END_RE.search(cleaned):
@@ -184,9 +186,11 @@ def group_into_sentences(blocks, trim_start=0.0, trim_end=0.0,
                 "start": trimmed_start,
                 "end": trimmed_end,
                 "text": normalize_case(combined, language=language),
+                "cue_indices": list(buffer_cue_indices),
             })
             buffer_parts = []
             buffer_start = None
+            buffer_cue_indices = []
 
     # Flush de lo que quede sin cerrar al final del archivo
     if buffer_parts:
@@ -198,6 +202,7 @@ def group_into_sentences(blocks, trim_start=0.0, trim_end=0.0,
             "start": trimmed_start,
             "end": trimmed_end,
             "text": normalize_case(combined, language=language),
+            "cue_indices": list(buffer_cue_indices),
         })
 
     return sentences, discarded
@@ -222,6 +227,7 @@ def apply_global_shift(sentences, shift):
             "start": new_start,
             "end": new_end,
             "text": s["text"],
+            "cue_indices": s.get("cue_indices", []),
         })
     return shifted
 

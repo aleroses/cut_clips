@@ -26,10 +26,25 @@ This makes it possible to turn an entire video episode into Anki study material 
 You need the following:
 
 - Python 3
-- FFmpeg
-- The Python `deepl` library
-- A DeepL account and API key for automatic translation.
-- Anki for importing the generated `.tsv` file.
+- FFmpeg and ffprobe
+- Anki for importing the generated `.tsv` file
+
+Optional:
+
+- **DeepL** — automatic translation (`pip install deepl`); requires API key only when using `--translate`
+- **GUI** — PySide6, python-mpv, and system libmpv (see [Graphical editor](#graphical-editor-gui_apppy))
+
+Install Python dependencies:
+
+```bash
+pip install -r requirements.txt --break-system-packages
+```
+
+On Debian/Ubuntu for GUI preview:
+
+```bash
+sudo apt install libmpv2   # or libmpv1 depending on your release
+```
 
 ## Installation
 
@@ -81,10 +96,51 @@ pip install deepl --break-system-packages
 
 ```bash
 .
-├── cut_clips.py
-├── parse_srt_preview.py
-└── Todd.McFarlanes.Spawn.S01E01.1080p.HMAX.WEB-DL.DD2.0.H.264-SLiGNOME.mkv
+├── core/                  # Shared logic (parser, clip engine, naming)
+├── media/                 # ffprobe analysis and subtitle extraction
+├── persistence/           # Project/episode/clip model (JSON save/load)
+├── docs/                  # Architecture, data model, changelog
+├── cut_clips.py           # CLI: CSV + video → clips + TSV
+├── parse_srt_preview.py   # CLI: SRT → preview CSV
+├── inspect_media.py       # CLI: analyze tracks, extract subtitles
+├── gui_app.py             # GUI: edit timings, preview, cut clips
+├── requirements.txt
+└── README.md
 ```
+
+## 0. Inspect Media (recommended first step)
+
+Before extracting subtitles manually, analyze the video file:
+
+```bash
+python3 inspect_media.py "episode.mkv" --language en
+```
+
+This lists video, audio, and subtitle tracks with absolute and relative indexes,
+distinguishes text subtitles from image-based (PGS) tracks, and can extract SRT:
+
+```bash
+python3 inspect_media.py "episode.mkv" --extract-subtitle 2 -o S01E01.srt
+```
+
+Use the absolute stream index shown in the report (`abs=N`), not the relative audio index.
+
+## Graphical editor (gui_app.py)
+
+An experimental PySide6 GUI lets you review subtitle timings, preview segments
+with mpv (A–B loop), merge/delete lines, cut individual clips, and export TSV —
+without editing CSV in LibreOffice.
+
+```bash
+python3 gui_app.py
+```
+
+Flow: **File → Open video** → review track dialog (ffprobe) →
+**Open subtitle (.srt)** or **Extract subtitles from video** (with parser options) →
+adjust times → **Cut** → **Export TSV**.
+
+Requires PySide6, python-mpv, and libmpv. Preview works without cutting; translation
+at export is optional (DeepL API key or `DEEPL_API_KEY` env var).
 
 ## 1. Extract Subtitles and Create the Preview File
 
@@ -103,6 +159,8 @@ VIDEO1=$(ls Todd.McFarlanes.Spawn.${EPISODE}*.mkv)
 CSV1="${EPISODE}_preview.csv"
 
 # Extract the subtitles from the corresponding track
+# Prefer inspect_media.py to find the correct stream index:
+#   python3 inspect_media.py "$VIDEO1" --extract-subtitle N -o "${EPISODE}.srt"
 ffmpeg -i "$VIDEO1" -map 0:2 "${EPISODE}.srt"
 
 # Create a CSV file for manually reviewing and correcting

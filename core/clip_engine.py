@@ -22,8 +22,24 @@ import re
 import subprocess
 import sys
 
+from core.naming import clip_audio_filename, clip_video_filename
+
 
 MIN_DURATION = 0.05  # segundos; por debajo de esto una línea es inválida
+
+
+class BatchCancelToken:
+    """Token compartido para cancelar un run_batch() en curso desde la GUI."""
+
+    def __init__(self):
+        self.cancelled = False
+        self._process = None
+
+    def request_cancel(self):
+        self.cancelled = True
+        proc = self._process
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
 
 
 # ---------------------------------------------------------------------------
@@ -131,19 +147,40 @@ def compute_padded_windows(sentences, padding):
     for i, s in enumerate(sentences):
         prev_end = sentences[i - 1]["end"] if i > 0 else None
         next_start = sentences[i + 1]["start"] if i < n - 1 else None
-
-        padded_start = s["start"] - padding
-        if padded_start < 0:
-            padded_start = 0.0
-        if prev_end is not None:
-            padded_start = max(padded_start, prev_end)
-
-        padded_end = s["end"] + padding
-        if next_start is not None:
-            padded_end = min(padded_end, next_start)
-
-        windows.append((padded_start, padded_end))
+        windows.append(
+            compute_padded_window(
+                s["start"],
+                s["end"],
+                padding_start=padding,
+                padding_end=padding,
+                prev_end=prev_end,
+                next_start=next_start,
+            )
+        )
     return windows
+
+
+def compute_padded_window(
+    start,
+    end,
+    *,
+    padding_start=0.0,
+    padding_end=0.0,
+    prev_end=None,
+    next_start=None,
+):
+    """Ventana de corte con margen, sin invadir la línea anterior/siguiente."""
+    padded_start = start - padding_start
+    if padded_start < 0:
+        padded_start = 0.0
+    if prev_end is not None:
+        padded_start = max(padded_start, prev_end)
+
+    padded_end = end + padding_end
+    if next_start is not None:
+        padded_end = min(padded_end, next_start)
+
+    return padded_start, padded_end
 
 
 # ---------------------------------------------------------------------------
@@ -252,8 +289,8 @@ def validate_and_build_jobs(sentences, windows, series_name, episode_label,
 
     for offset, (sentence, (start, end)) in enumerate(zip(sentences, windows)):
         i = start_index + offset
-        video_filename = f"{series_name}_{episode_label}_Line_{i:04d}.webm"
-        audio_filename = f"{series_name}_{episode_label}_Line_{i:04d}.mp3"
+        video_filename = clip_video_filename(series_name, episode_label, i)
+        audio_filename = clip_audio_filename(series_name, episode_label, i)
         video_path = os.path.join(output_dir, video_filename)
         audio_path = os.path.join(output_dir, audio_filename)
 
@@ -287,9 +324,11 @@ def validate_and_build_jobs(sentences, windows, series_name, episode_label,
 
 
 def run_batch(video_path, jobs, width, height, crf, audio_bitrate, mp3_bitrate,
-              audio_track=0, video_track=0):
+              audio_track=0, video_track=0, cancel_token=None):
     """Ejecuta el comando de pasada única para 'jobs'. Devuelve
-    (video_generated, video_errors, audio_generated, audio_errors, error_message)."""
+    (video_generated, video_errors, audio_generated, audio_errors, error_message).
+
+    cancel_token: BatchCancelToken opcional; request_cancel() termina ffmpeg."""
     video_generated = video_errors = 0
     audio_generated = audio_errors = 0
     error_message = None
@@ -297,15 +336,24 @@ def run_batch(video_path, jobs, width, height, crf, audio_bitrate, mp3_bitrate,
     if not jobs:
         return video_generated, video_errors, audio_generated, audio_errors, error_message
 
+    if cancel_token is not None and cancel_token.cancelled:
+        return video_generated, video_errors, audio_generated, audio_errors, "Cancelado por el usuario."
+
     max_time = max(j["end"] for j in jobs) + 1.0
     cmd = build_single_pass_command(
         video_path, jobs, width, height, crf, audio_bitrate, mp3_bitrate, max_time,
         audio_track=audio_track, video_track=video_track,
     )
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if cancel_token is not None:
+        cancel_token._process = process
+    _stdout, stderr = process.communicate()
 
-    if result.returncode != 0:
-        error_message = result.stderr.strip()[-2000:]
+    if cancel_token is not None and cancel_token.cancelled:
+        return video_generated, video_errors, audio_generated, audio_errors, "Cancelado por el usuario."
+
+    if process.returncode != 0:
+        error_message = stderr.strip()[-2000:]
         return video_generated, video_errors, audio_generated, audio_errors, error_message
 
     for j in jobs:

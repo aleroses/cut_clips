@@ -438,8 +438,7 @@ class MainWindow(QMainWindow):
             return self._project_path
         if self.video_path:
             series = self._series_name or guess_series_name(self.video_path)
-            from core.naming import format_episode_label
-            label = format_episode_label(self._season, self._episode_num)
+            label = self._file_episode_label()
             root = os.path.dirname(self.video_path)
             return default_project_path(series, label, root)
         return ""
@@ -2219,12 +2218,13 @@ class MainWindow(QMainWindow):
             return
 
         series_name = self._effective_series_name()
-        episode_label = self._episode_label()
+        file_episode_label = self._file_episode_label()
         output_dir = self._output_dir()
         existing = 0
         for seg in candidates:
+            seq_num = self._export_sequence_number(seg["id"])
             webm_path, mp3_path, _ = clip_output_paths(
-                series_name, episode_label, seg["id"], output_dir
+                series_name, file_episode_label, seq_num, output_dir
             )
             if os.path.exists(webm_path) or os.path.exists(mp3_path):
                 existing += 1
@@ -2412,8 +2412,9 @@ class MainWindow(QMainWindow):
                     self._mark_segment_generated(seg)
                     self._mark_project_modified()
                     series_name = self._effective_series_name()
-                    episode_label = self._episode_label()
-                    clip_name = clip_video_filename(series_name, episode_label, seg["id"])
+                    file_episode_label = self._file_episode_label()
+                    seq_num = self._export_sequence_number(seg["id"])
+                    clip_name = clip_video_filename(series_name, file_episode_label, seq_num)
                     self.statusBar().showMessage(
                         f"Clip id={segment_id} generado: {clip_name}"
                     )
@@ -2456,7 +2457,6 @@ class MainWindow(QMainWindow):
 
         tsv_rows = []
         series_name = self._effective_series_name()
-        episode_label = self._episode_label()
         file_episode_label = self._file_episode_label()
         for seg in self.segments:
             if seg["status"] != "exported":
@@ -2465,7 +2465,7 @@ class MainWindow(QMainWindow):
             video_filename = clip_video_filename(series_name, file_episode_label, seq_num)
             audio_filename = clip_audio_filename(series_name, file_episode_label, seq_num)
             tsv_rows.append((seq_num, seg["text"], video_filename, audio_filename,
-                              episode_label, self.episode_title))
+                              file_episode_label, self.episode_title))
 
         translations = {}
         if self.translate_checkbox.isChecked():

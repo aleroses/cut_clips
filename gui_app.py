@@ -2084,6 +2084,20 @@ class MainWindow(QMainWindow):
     def _episode_label(self) -> str:
         return format_episode_label(self._season, self._episode_num)
 
+    def _file_episode_label(self) -> str:
+        return format_episode_label(self._season, self._episode_num, style="compact")
+
+    def _export_sequence_number(self, seg_id: int) -> int:
+        """Posición 1-based entre segmentos activos, en orden de self.segments."""
+        seq = 0
+        for seg in self.segments:
+            if seg["status"] == "deleted":
+                continue
+            seq += 1
+            if seg["id"] == seg_id:
+                return seq
+        raise ValueError(f"Segmento id={seg_id} no encontrado entre segmentos activos")
+
     def _output_dir(self) -> str:
         if not self.video_path:
             return "output_files"
@@ -2142,7 +2156,7 @@ class MainWindow(QMainWindow):
 
     def _build_batch_jobs(self, segments, *, overwrite: bool):
         series_name = self._effective_series_name()
-        episode_label = self._episode_label()
+        file_episode_label = self._file_episode_label()
         output_dir = self._output_dir()
         os.makedirs(output_dir, exist_ok=True)
         jobs = []
@@ -2150,8 +2164,9 @@ class MainWindow(QMainWindow):
             cut_start, cut_end = self._compute_cut_window(seg)
             if cut_end - cut_start < MIN_DURATION:
                 continue
+            seq_num = self._export_sequence_number(seg["id"])
             webm_path, mp3_path, _base = clip_output_paths(
-                series_name, episode_label, seg["id"], output_dir
+                series_name, file_episode_label, seq_num, output_dir
             )
             if not overwrite and (os.path.exists(webm_path) or os.path.exists(mp3_path)):
                 continue
@@ -2351,18 +2366,19 @@ class MainWindow(QMainWindow):
         cut_start, cut_end = window
 
         series_name = self._effective_series_name()
-        episode_label = self._episode_label()
+        file_episode_label = self._file_episode_label()
         output_dir = self._output_dir()
         os.makedirs(output_dir, exist_ok=True)
+        seq_num = self._export_sequence_number(seg["id"])
         webm_path, mp3_path, output_path = clip_output_paths(
-            series_name, episode_label, seg["id"], output_dir
+            series_name, file_episode_label, seq_num, output_dir
         )
 
         if os.path.exists(webm_path) or os.path.exists(mp3_path):
             reply = QMessageBox.question(
                 self,
                 "Archivos existentes",
-                f"Ya existen archivos para el clip {seg['id']:04d}:\n"
+                f"Ya existen archivos para el clip {seq_num:04d}:\n"
                 f"{os.path.basename(webm_path)}\n"
                 "¿Regenerarlos con los tiempos actuales?",
                 QMessageBox.Yes | QMessageBox.No,
@@ -2441,12 +2457,14 @@ class MainWindow(QMainWindow):
         tsv_rows = []
         series_name = self._effective_series_name()
         episode_label = self._episode_label()
+        file_episode_label = self._file_episode_label()
         for seg in self.segments:
             if seg["status"] != "exported":
                 continue
-            video_filename = clip_video_filename(series_name, episode_label, seg["id"])
-            audio_filename = clip_audio_filename(series_name, episode_label, seg["id"])
-            tsv_rows.append((seg["id"], seg["text"], video_filename, audio_filename,
+            seq_num = self._export_sequence_number(seg["id"])
+            video_filename = clip_video_filename(series_name, file_episode_label, seq_num)
+            audio_filename = clip_audio_filename(series_name, file_episode_label, seq_num)
+            tsv_rows.append((seq_num, seg["text"], video_filename, audio_filename,
                               episode_label, self.episode_title))
 
         translations = {}

@@ -319,6 +319,7 @@ class MainWindow(QMainWindow):
         self._seek_step_sec = 1.0
         self._text_edit_undo_pending = False
         self._preview_display_id: int | None = None
+        self._refreshing_list = False
 
         self._playback_timer = QTimer(self)
         self._playback_timer.setInterval(200)
@@ -1463,35 +1464,45 @@ class MainWindow(QMainWindow):
         )
 
     def _refresh_list(self, *, select_id: int | None = None):
-        if select_id is None:
-            item = self.segment_list.currentItem()
-            select_id = item.data(Qt.UserRole) if item else None
-        self.segment_list.clear()
-        for seg in self.segments:
-            if seg["status"] == "deleted":
-                continue
-            label = self._segment_list_label(seg)
-            item = QListWidgetItem(label)
-            item.setData(Qt.UserRole, seg["id"])
-            if seg["id"] == self._preview_display_id:
-                item.setForeground(Qt.darkGreen)
-            elif seg["status"] == "outdated":
-                item.setForeground(Qt.darkYellow)
-            elif seg["status"] == "exported":
-                item.setForeground(Qt.darkCyan)
-            self.segment_list.addItem(item)
+        if self._refreshing_list:
+            return
+        self._refreshing_list = True
+        try:
+            self.segment_list.blockSignals(True)
+            try:
+                if select_id is None:
+                    item = self.segment_list.currentItem()
+                    select_id = item.data(Qt.UserRole) if item else None
+                self.segment_list.clear()
+                for seg in self.segments:
+                    if seg["status"] == "deleted":
+                        continue
+                    label = self._segment_list_label(seg)
+                    item = QListWidgetItem(label)
+                    item.setData(Qt.UserRole, seg["id"])
+                    if seg["id"] == self._preview_display_id:
+                        item.setForeground(Qt.darkGreen)
+                    elif seg["status"] == "outdated":
+                        item.setForeground(Qt.darkYellow)
+                    elif seg["status"] == "exported":
+                        item.setForeground(Qt.darkCyan)
+                    self.segment_list.addItem(item)
 
-        exported = self._exported_count()
-        outdated = self._outdated_count()
-        header = "Oraciones pendientes:"
-        if outdated:
-            header += f"  ({outdated} desactualizada(s))"
-        if exported:
-            header += f"  ({exported} generada(s))"
-        self.list_header_label.setText(header)
+                exported = self._exported_count()
+                outdated = self._outdated_count()
+                header = "Oraciones pendientes:"
+                if outdated:
+                    header += f"  ({outdated} desactualizada(s))"
+                if exported:
+                    header += f"  ({exported} generada(s))"
+                self.list_header_label.setText(header)
 
-        if select_id is not None:
-            self._select_segment_by_id(select_id)
+                if select_id is not None:
+                    self._select_segment_by_id(select_id)
+            finally:
+                self.segment_list.blockSignals(False)
+        finally:
+            self._refreshing_list = False
 
     def _pending_segments(self):
         return [s for s in self.segments if s["status"] in ("pending", "preview")]

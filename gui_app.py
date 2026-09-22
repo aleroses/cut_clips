@@ -53,9 +53,12 @@ from core.subtitle_parser import generate_sentences, normalize_case, parse_srt_b
 from core.clip_engine import (
     cut_single_clip, write_anki_tsv, detect_video_title,
     extract_episode_title, translate_texts, compute_padded_window,
+    load_translation_cache,
     sanitize_filename_component, run_batch, BatchCancelToken, MIN_DURATION,
 )
-from core.naming import clip_audio_filename, clip_video_filename, format_episode_label
+from core.naming import (
+    clip_audio_filename, clip_video_filename, format_episode_label, tsv_filename,
+)
 from media.probe import (
     probe, summarize_media, extract_subtitle, find_subtitle_stream,
     find_sidecar_subtitle, subtitle_extract_path,
@@ -482,7 +485,14 @@ class MainWindow(QMainWindow):
             project = self._build_current_project()
             save_project(project, self._project_path)
             self._clear_project_modified()
-            self.statusBar().showMessage(f"Proyecto guardado: {self._project_path}")
+            msg = f"Proyecto guardado: {self._project_path}"
+            try:
+                tsv_name = self._auto_export_tsv()
+                if tsv_name:
+                    msg += f". TSV exportado a {tsv_name}"
+            except Exception as e:
+                msg += f". TSV no exportado: {e}"
+            self.statusBar().showMessage(msg)
         except Exception as e:
             QMessageBox.critical(self, "Error al guardar", str(e))
 
@@ -512,7 +522,14 @@ class MainWindow(QMainWindow):
             self._project_path = path
             self._project_root_dir = os.path.dirname(os.path.abspath(path)) or "."
             self._clear_project_modified()
-            self.statusBar().showMessage(f"Proyecto guardado: {path}")
+            msg = f"Proyecto guardado: {path}"
+            try:
+                tsv_name = self._auto_export_tsv()
+                if tsv_name:
+                    msg += f". TSV exportado a {tsv_name}"
+            except Exception as e:
+                msg += f". TSV no exportado: {e}"
+            self.statusBar().showMessage(msg)
         except Exception as e:
             QMessageBox.critical(self, "Error al guardar", str(e))
 
@@ -2426,6 +2443,50 @@ class MainWindow(QMainWindow):
 
     # -- Exportar TSV ---------------------------------------------------------
 
+    def _build_tsv_rows(self) -> list[tuple]:
+        """Filas TSV para segmentos exportados: (seq_num, text, video, audio, episode, title)."""
+        series_name = self._effective_series_name()
+        file_episode_label = self._file_episode_label()
+        rows = []
+        for seg in self.segments:
+            if seg["status"] != "exported":
+                continue
+            seq_num = self._export_sequence_number(seg["id"])
+            video_filename = clip_video_filename(series_name, file_episode_label, seq_num)
+            audio_filename = clip_audio_filename(series_name, file_episode_label, seq_num)
+            rows.append((
+                seq_num, seg["text"], video_filename, audio_filename,
+                file_episode_label, self.episode_title,
+            ))
+        return rows
+
+    def _auto_export_tsv(self) -> str | None:
+        """Escribe TSV junto al .anki-project.json. Devuelve basename o None si omitido."""
+        if not self._project_path:
+            return None
+        tsv_rows = self._build_tsv_rows()
+        if not tsv_rows:
+            return None
+
+        series_name = self._effective_series_name()
+        file_episode_label = self._file_episode_label()
+        title = self.episode_title or None
+        basename = tsv_filename(series_name, file_episode_label, title)
+        tsv_path = os.path.join(os.path.dirname(self._project_path), basename)
+
+        translations: dict[str, str] = {}
+        if self.translate_checkbox.isChecked():
+            cache_path = os.path.join(
+                os.path.dirname(self._project_path), "translations_cache.json"
+            )
+            cache = load_translation_cache(cache_path)
+            for _, text, *_ in tsv_rows:
+                if text in cache:
+                    translations[text] = cache[text]
+
+        write_anki_tsv(tsv_path, tsv_rows, translations)
+        return basename
+
     def export_tsv(self):
         if not self.segments:
             QMessageBox.information(self, "Nada que exportar", "No hay oraciones cargadas.")
@@ -2455,17 +2516,7 @@ class MainWindow(QMainWindow):
         if not path:
             return
 
-        tsv_rows = []
-        series_name = self._effective_series_name()
-        file_episode_label = self._file_episode_label()
-        for seg in self.segments:
-            if seg["status"] != "exported":
-                continue
-            seq_num = self._export_sequence_number(seg["id"])
-            video_filename = clip_video_filename(series_name, file_episode_label, seq_num)
-            audio_filename = clip_audio_filename(series_name, file_episode_label, seq_num)
-            tsv_rows.append((seq_num, seg["text"], video_filename, audio_filename,
-                              file_episode_label, self.episode_title))
+        tsv_rows = self._build_tsv_rows()
 
         translations = {}
         if self.translate_checkbox.isChecked():

@@ -49,7 +49,7 @@ from PySide6.QtWidgets import (
     QProgressBar, QScrollArea,
 )
 
-from core.subtitle_parser import generate_sentences, parse_srt_blocks
+from core.subtitle_parser import generate_sentences, normalize_case, parse_srt_blocks
 from core.clip_engine import (
     cut_single_clip, write_anki_tsv, detect_video_title,
     extract_episode_title, translate_texts, compute_padded_window,
@@ -1528,6 +1528,20 @@ class MainWindow(QMainWindow):
             s.pop("preview_end", None)
             s["status"] = "pending"
 
+    def _sync_editor_widgets_to_segment(self, seg: dict):
+        """Actualiza spinboxes, texto y cues_detail desde un segment dict (sin refrescar lista)."""
+        self.start_spin.blockSignals(True)
+        self.end_spin.blockSignals(True)
+        self.start_spin.setValue(seg["start"])
+        self.end_spin.setValue(seg["end"])
+        self.start_spin.blockSignals(False)
+        self.end_spin.blockSignals(False)
+        self.segment_text_edit.blockSignals(True)
+        self.segment_text_edit.setPlainText(seg["text"])
+        self.segment_text_edit.blockSignals(False)
+        self._update_position_label()
+        self._update_cues_detail(seg)
+
     def on_segment_selected(self, row):
         self._clear_preview_display()
         self._revert_preview_status_on_others()
@@ -1542,17 +1556,7 @@ class MainWindow(QMainWindow):
             self._refresh_list()
             self.segment_list.blockSignals(False)
             return
-        self.start_spin.blockSignals(True)
-        self.end_spin.blockSignals(True)
-        self.start_spin.setValue(seg["start"])
-        self.end_spin.setValue(seg["end"])
-        self.start_spin.blockSignals(False)
-        self.end_spin.blockSignals(False)
-        self.segment_text_edit.blockSignals(True)
-        self.segment_text_edit.setPlainText(seg["text"])
-        self.segment_text_edit.blockSignals(False)
-        self._update_position_label()
-        self._update_cues_detail(seg)
+        self._sync_editor_widgets_to_segment(seg)
         self.segment_list.blockSignals(True)
         self._refresh_list(select_id=seg["id"])
         self.segment_list.blockSignals(False)
@@ -1623,7 +1627,10 @@ class MainWindow(QMainWindow):
             cue = self.cue_map.get(idx)
             if cue:
                 parts.append(cue["text"].strip())
-        return " ".join(parts)
+        combined = " ".join(parts)
+        if not combined:
+            return combined
+        return normalize_case(combined, language=self.parser_options.language)
 
     def _bounds_from_cue_indices(self, cue_indices: list) -> tuple[float, float]:
         starts, ends = [], []
@@ -1669,6 +1676,7 @@ class MainWindow(QMainWindow):
             self._push_undo()
             new_seg = self._split_at_srt_boundary(seg, split_after)
             self._refresh_list(select_id=seg["id"])
+            self._sync_editor_widgets_to_segment(seg)
             self._mark_project_modified()
             self.statusBar().showMessage(
                 f"Dividido id={seg['id']} tras bloque SRT → nuevo id={new_seg['id']}."
@@ -1749,6 +1757,7 @@ class MainWindow(QMainWindow):
         idx = self.segments.index(seg)
         self.segments.insert(idx + 1, new_seg)
         self._refresh_list(select_id=seg["id"])
+        self._sync_editor_widgets_to_segment(seg)
         self._mark_project_modified()
         self.statusBar().showMessage(
             f"Dividido id={seg['id']} en {split_time:.3f} s → nuevo id={new_seg['id']}."
@@ -1778,6 +1787,7 @@ class MainWindow(QMainWindow):
             seg["status"] = "pending"
         nxt["status"] = "deleted"
         self._refresh_list(select_id=seg["id"])
+        self._sync_editor_widgets_to_segment(seg)
         self._mark_project_modified()
         self.statusBar().showMessage(
             f"Fusionado: clip id={seg['id']} ahora incluye {self._format_cue_summary(merged_indices)}."

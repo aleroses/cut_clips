@@ -145,6 +145,21 @@ def apply_outdated_status(seg: dict, current_fingerprint: dict[str, Any]) -> boo
     return False
 
 
+def export_sequence_number(segments: list[dict], seg_id: int) -> int:
+    """Posición 1-based entre segmentos activos, en orden de la lista segments.
+
+    Debe mantenerse sincronizado con MainWindow._export_sequence_number() en gui_app.py.
+    """
+    seq = 0
+    for seg in segments:
+        if seg.get("status") == "deleted":
+            continue
+        seq += 1
+        if seg["id"] == seg_id:
+            return seq
+    raise ValueError(f"Segmento id={seg_id} no encontrado entre segmentos activos")
+
+
 def clip_output_paths(
     series_name: str,
     episode_label: str,
@@ -168,7 +183,8 @@ def segment_to_clip(
     internal_index: int,
     output_dir: str,
     series_name: str,
-    episode_label: str,
+    file_episode_label: str,
+    sequence_number: int,
     padding_start: float = 0.0,
     padding_end: float = 0.0,
 ) -> Clip | None:
@@ -179,7 +195,7 @@ def segment_to_clip(
 
     clip_id = int(seg["id"])
     webm_path, mp3_path, _ = clip_output_paths(
-        series_name, episode_label, clip_id, output_dir
+        series_name, file_episode_label, sequence_number, output_dir
     )
 
     clip = Clip(
@@ -248,21 +264,24 @@ def build_project_from_gui(
         output_dir = os.path.join(os.path.dirname(video_path), "output_files")
 
     episode_label = format_episode_label(season, episode_num)
+    file_episode_label = format_episode_label(season, episode_num, style="compact")
     clips: list[Clip] = []
     clips_extra: dict[str, dict[str, float]] = {}
     internal_index = 0
     for seg in segments:
+        if seg.get("status") == "deleted":
+            continue
+        seq_num = export_sequence_number(segments, seg["id"])
         clip = segment_to_clip(
             seg,
             internal_index=internal_index,
             output_dir=output_dir,
             series_name=series_name,
-            episode_label=episode_label,
+            file_episode_label=file_episode_label,
+            sequence_number=seq_num,
             padding_start=padding_start,
             padding_end=padding_end,
         )
-        if clip is None:
-            continue
         clips.append(clip)
         if seg.get("status") == "preview":
             clips_extra[str(seg["id"])] = {

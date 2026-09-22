@@ -102,6 +102,25 @@ def is_mostly_uppercase(text, threshold=0.6):
     return (upper_count / len(letters)) > threshold
 
 
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _protect_html_tags(text: str) -> tuple[str, list[str]]:
+    tags: list[str] = []
+
+    def repl(match):
+        tags.append(match.group(0))
+        return f"\uE000{len(tags) - 1}\uE001"
+
+    return _HTML_TAG_RE.sub(repl, text), tags
+
+
+def _restore_html_tags(text: str, tags: list[str]) -> str:
+    for i, tag in enumerate(tags):
+        text = text.replace(f"\uE000{i}\uE001", tag)
+    return text
+
+
 def normalize_case(text, language="en"):
     """ALL CAPS -> sentence case, SOLO si el texto realmente está en
     mayúsculas (ver is_mostly_uppercase). Si ya viene en case normal, se
@@ -114,6 +133,7 @@ def normalize_case(text, language="en"):
     if not is_mostly_uppercase(text):
         return text
 
+    text, html_tags = _protect_html_tags(text)
     text = text.lower()
 
     if language == "en":
@@ -127,7 +147,7 @@ def normalize_case(text, language="en"):
         return match.group(1) + match.group(2).upper()
 
     text = re.sub(r"(^|[.!?]\s+)([a-zà-ÿ])", cap, text)
-    return text
+    return _restore_html_tags(text, html_tags)
 
 
 def apply_boundary_trim(start, end, trim_start, trim_end, min_duration=0.3):

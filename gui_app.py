@@ -281,6 +281,11 @@ class ExtractSubtitleTask(QRunnable):
 # ---------------------------------------------------------------------------
 
 class MainWindow(QMainWindow):
+    _REFERENCE_STYLE_NEUTRAL = ""
+    _REFERENCE_STYLE_WARNING = (
+        "QPlainTextEdit { background-color: #fff3cd; border: 1px solid #ffc107; }"
+    )
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Anki Video Tool — Editor de clips")
@@ -576,6 +581,7 @@ class MainWindow(QMainWindow):
         self.segment_text_edit.clear()
         self.segment_text_edit.blockSignals(False)
         self._update_cues_detail(None)
+        self._set_reference_panel_visible(False)
         self._refresh_list()
 
     def _apply_loaded_project_state(self, state, project_path: str):
@@ -643,6 +649,11 @@ class MainWindow(QMainWindow):
         if missing_video:
             msg += f"  |  Vídeo no encontrado: {state.video_path}"
         self.statusBar().showMessage(msg)
+        if self.reference_alignment:
+            self._set_reference_panel_visible(True)
+            self._update_reference_text_display(self._get_selected_segment())
+        else:
+            self._set_reference_panel_visible(False)
         if missing_video:
             QMessageBox.warning(
                 self,
@@ -951,6 +962,7 @@ class MainWindow(QMainWindow):
         self._update_undo_actions()
         seg = self._get_selected_segment()
         self._update_cues_detail(seg)
+        self._update_reference_text_display(seg)
         self._mark_project_modified()
 
     def undo_edit(self):
@@ -1097,6 +1109,16 @@ class MainWindow(QMainWindow):
         self.load_reference_btn = QPushButton("Cargar texto de referencia externo…")
         self.load_reference_btn.clicked.connect(self.load_external_reference_text)
         left_layout.addWidget(self.load_reference_btn)
+
+        self.reference_label = QLabel("Texto de referencia:")
+        self.reference_text_display = QPlainTextEdit()
+        self.reference_text_display.setReadOnly(True)
+        self.reference_text_display.setMaximumHeight(100)
+        self.reference_text_display.setPlaceholderText("(sin texto de referencia cargado)")
+        left_layout.addWidget(self.reference_label)
+        left_layout.addWidget(self.reference_text_display)
+        self.reference_label.setVisible(False)
+        self.reference_text_display.setVisible(False)
 
         apply_btn = QPushButton("Aplicar tiempos a la línea seleccionada")
         apply_btn.clicked.connect(self.apply_times_to_selected)
@@ -1277,6 +1299,7 @@ class MainWindow(QMainWindow):
 
         self._stop_mpv_playback()
         self.reference_alignment = None
+        self._set_reference_panel_visible(False)
         if not self._finish_video_open(path):
             return
 
@@ -1327,6 +1350,8 @@ class MainWindow(QMainWindow):
         self.reference_alignment = align_reference_text(self.cue_map, text)
         diff_count = len(self.reference_alignment.get("differences", []))
         self._mark_project_modified()
+        self._set_reference_panel_visible(True)
+        self._update_reference_text_display(self._get_selected_segment())
         self.statusBar().showMessage(
             f"Texto de referencia cargado: {diff_count} diferencia(s) detectada(s)."
         )
@@ -1484,6 +1509,7 @@ class MainWindow(QMainWindow):
             for i, b in enumerate(blocks)
         }
         self.reference_alignment = None
+        self._set_reference_panel_visible(False)
 
         self.segments = []
         for s in result["sentences"]:
@@ -1605,6 +1631,7 @@ class MainWindow(QMainWindow):
         self.segment_text_edit.blockSignals(False)
         self._update_position_label()
         self._update_cues_detail(seg)
+        self._update_reference_text_display(seg)
 
     def on_segment_selected(self, row):
         self._clear_preview_display()
@@ -1616,6 +1643,7 @@ class MainWindow(QMainWindow):
             self.segment_text_edit.clear()
             self.segment_text_edit.blockSignals(False)
             self._update_cues_detail(None)
+            self._update_reference_text_display(None)
             self.segment_list.blockSignals(True)
             self._refresh_list()
             self.segment_list.blockSignals(False)
@@ -1661,6 +1689,54 @@ class MainWindow(QMainWindow):
             )
         header = f"Clip id={seg['id']} — {len(indices)} bloque(s) SRT:\n"
         self.cues_detail.setPlainText(header + "\n".join(lines))
+
+    def _set_reference_panel_visible(self, visible: bool) -> None:
+        self.reference_label.setVisible(visible)
+        self.reference_text_display.setVisible(visible)
+        if not visible:
+            self.reference_text_display.clear()
+            self.reference_text_display.setStyleSheet(self._REFERENCE_STYLE_NEUTRAL)
+
+    def _update_reference_text_display(self, seg: dict | None) -> None:
+        if self.reference_alignment is None:
+            self._set_reference_panel_visible(False)
+            return
+
+        self._set_reference_panel_visible(True)
+
+        if seg is None:
+            self.reference_text_display.clear()
+            self.reference_text_display.setStyleSheet("")
+            return
+
+        indices = seg.get("cue_indices") or []
+        if not indices:
+            self.reference_text_display.clear()
+            self.reference_text_display.setStyleSheet("")
+            return
+
+        cue_reference_text = self.reference_alignment.get("cue_reference_text") or {}
+        parts = [
+            cue_reference_text.get(int(idx), cue_reference_text.get(idx, ""))
+            for idx in indices
+        ]
+        reference_text = " ".join(part for part in parts if part).strip()
+        if not reference_text:
+            reference_text = "(sin texto de referencia para este bloque)"
+
+        seg_indices = set(indices)
+        has_difference = any(
+            set(diff.get("cue_indices") or []) & seg_indices
+            for diff in (self.reference_alignment.get("differences") or [])
+        )
+
+        self.reference_text_display.setPlainText(reference_text)
+        if has_difference:
+            self.reference_text_display.setStyleSheet(
+                "QPlainTextEdit { background-color: #fff3cd; color: #1a1a1a; border: 1px solid #e0a800; }"
+            )
+        else:
+            self.reference_text_display.setStyleSheet("")
 
     def _format_cue_summary(self, cue_indices: list) -> str:
         return format_cue_range_label(cue_indices)

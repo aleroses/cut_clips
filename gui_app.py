@@ -59,6 +59,7 @@ from core.clip_engine import (
 from core.naming import (
     clip_audio_filename, clip_video_filename, format_episode_label, tsv_filename,
 )
+from core.reference_alignment import align_reference_text
 from media.probe import (
     probe, summarize_media, extract_subtitle, find_subtitle_stream,
     find_sidecar_subtitle, subtitle_extract_path,
@@ -302,6 +303,7 @@ class MainWindow(QMainWindow):
         self.subtitle_path = None
         self.parser_options = ParserOptions(language="en")
         self.cue_map = {}  # índice de bloque SRT -> {index, start, end, text}
+        self.reference_alignment = None
 
         self._project_path = None
         self._project_modified = False
@@ -469,6 +471,7 @@ class MainWindow(QMainWindow):
             root_dir=self._project_root_dir,
             padding_start=self.padding_start,
             padding_end=self.padding_end,
+            reference_alignment=self.reference_alignment,
         )
 
     def save_project(self):
@@ -561,6 +564,7 @@ class MainWindow(QMainWindow):
         self._clear_preview_display()
         self.segments = []
         self.cue_map = {}
+        self.reference_alignment = None
         self.next_id = 1
         self.video_path = None
         self.probe_data = None
@@ -592,6 +596,7 @@ class MainWindow(QMainWindow):
         self.media_summary = state.media_summary
         self.cue_map = state.cue_map
         self.segments = state.segments
+        self.reference_alignment = state.reference_alignment
         self.next_id = state.next_id
         self.translate_checkbox.setChecked(state.translate_enabled)
         self.series_name_edit.setText(state.series_name)
@@ -628,6 +633,13 @@ class MainWindow(QMainWindow):
         if self._reevaluate_outdated_segments():
             self._refresh_list()
         msg = f"Proyecto cargado: {os.path.basename(project_path)}"
+        if self.reference_alignment:
+            current_checksum = align_reference_text(self.cue_map, "")["checksum"]
+            if current_checksum != self.reference_alignment.get("checksum"):
+                msg += (
+                    "  |  El texto de referencia guardado no coincide con los subtítulos "
+                    "actuales, vuelve a cargarlo si lo necesitas"
+                )
         if missing_video:
             msg += f"  |  Vídeo no encontrado: {state.video_path}"
         self.statusBar().showMessage(msg)
@@ -1082,6 +1094,10 @@ class MainWindow(QMainWindow):
         self.segment_text_edit.textChanged.connect(self._on_segment_text_changed)
         left_layout.addWidget(self.segment_text_edit)
 
+        self.load_reference_btn = QPushButton("Cargar texto de referencia externo…")
+        self.load_reference_btn.clicked.connect(self.load_external_reference_text)
+        left_layout.addWidget(self.load_reference_btn)
+
         apply_btn = QPushButton("Aplicar tiempos a la línea seleccionada")
         apply_btn.clicked.connect(self.apply_times_to_selected)
         left_layout.addWidget(apply_btn)
@@ -1260,6 +1276,7 @@ class MainWindow(QMainWindow):
         self._project_root_dir = os.path.dirname(os.path.abspath(path)) or "."
 
         self._stop_mpv_playback()
+        self.reference_alignment = None
         if not self._finish_video_open(path):
             return
 
@@ -1282,6 +1299,36 @@ class MainWindow(QMainWindow):
             f"Vídeo cargado: {os.path.basename(path)}"
             + (f'  |  Título: "{self.episode_title}"' if self.episode_title else "")
             + f"  |  Pistas: {track_info}"
+        )
+
+    def load_external_reference_text(self):
+        if not self.cue_map:
+            QMessageBox.information(
+                self,
+                "Sin subtítulos",
+                "Carga un vídeo con subtítulos o un archivo SRT antes de alinear texto de referencia.",
+            )
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Cargar texto de referencia externo",
+            "",
+            "Texto (*.txt *.md);;Todos (*.*)",
+        )
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+        except OSError as e:
+            QMessageBox.critical(self, "Error al leer", str(e))
+            return
+
+        self.reference_alignment = align_reference_text(self.cue_map, text)
+        diff_count = len(self.reference_alignment.get("differences", []))
+        self._mark_project_modified()
+        self.statusBar().showMessage(
+            f"Texto de referencia cargado: {diff_count} diferencia(s) detectada(s)."
         )
 
     def open_subtitle(self):
@@ -1436,6 +1483,7 @@ class MainWindow(QMainWindow):
             }
             for i, b in enumerate(blocks)
         }
+        self.reference_alignment = None
 
         self.segments = []
         for s in result["sentences"]:

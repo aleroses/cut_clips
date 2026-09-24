@@ -110,6 +110,34 @@ def _append_assignments(
         target.setdefault(cue_index, []).extend(words)
 
 
+def _stripped_content_length(text: str) -> int:
+    cleaned = _strip_html(text)
+    for char in string.whitespace + string.punctuation:
+        cleaned = cleaned.replace(char, "")
+    return len(cleaned)
+
+
+def is_relevant_difference(diff: dict) -> bool:
+    """True si la diferencia debe mostrarse en el reporte visual."""
+    video_text = diff.get("video_text") or ""
+    reference_text = diff.get("reference_text") or ""
+    cue_indices = diff.get("cue_indices") or []
+
+    if _stripped_content_length(video_text) <= 2:
+        return False
+    if _stripped_content_length(reference_text) <= 2:
+        return False
+    if "*" in reference_text:
+        return False
+
+    video_word_count = len(video_text.split()) if video_text else 0
+    ref_word_count = len(reference_text.split()) if reference_text else 0
+    if len(cue_indices) > 2 and ref_word_count < video_word_count / 2:
+        return False
+
+    return True
+
+
 def align_reference_text(cue_map: dict[int, dict], reference_text: str) -> dict:
     """Alinea texto de referencia externo contra cue_map del vídeo.
 
@@ -188,6 +216,8 @@ def align_reference_text(cue_map: dict[int, dict], reference_text: str) -> dict:
             }
         )
 
+    differences = [d for d in differences if is_relevant_difference(d)]
+
     cue_reference_text = {
         cue_index: " ".join(assignments.get(cue_index, [])).strip()
         for cue_index in sorted(cue_map)
@@ -200,13 +230,48 @@ def align_reference_text(cue_map: dict[int, dict], reference_text: str) -> dict:
     }
 
 
+def _assert_noise_filtered(
+    label: str,
+    cue_map: dict[int, dict],
+    reference_text: str,
+    *,
+    noise_substrings: list[tuple[str, str]],
+    expected_cue_text: dict[int, str],
+) -> None:
+    result = align_reference_text(cue_map, reference_text)
+    diffs = result["differences"]
+
+    for video_part, ref_part in noise_substrings:
+        matched = [
+            d
+            for d in diffs
+            if video_part in (d.get("video_text") or "")
+            and ref_part in (d.get("reference_text") or "")
+        ]
+        if matched:
+            raise AssertionError(
+                f"{label}: se esperaba filtrar {video_part!r} vs {ref_part!r}, "
+                f"pero aparece en differences"
+            )
+
+    for cue_index, expected in expected_cue_text.items():
+        actual = result["cue_reference_text"].get(cue_index, "")
+        if actual != expected:
+            raise AssertionError(
+                f"{label}: cue_reference_text[{cue_index}]={actual!r}, "
+                f"esperado {expected!r}"
+            )
+
+    print(f"OK {label}")
+
+
 if __name__ == "__main__":
     sample_cue_map = {
         0: {
             "index": 0,
             "start": 0.0,
             "end": 1.5,
-            "text": "Hi there",
+            "text": "Hello there",
         },
         1: {
             "index": 1,
@@ -227,10 +292,11 @@ if __name__ == "__main__":
             "text": "Goodbye",
         },
     }
-    sample_reference = "High there How are you Fine thanks Goodbye"
+    sample_reference = "Help there How are you Fine thanks Goodbye"
 
     result = align_reference_text(sample_cue_map, sample_reference)
 
+    print("=== caso base (relevante) ===")
     print("checksum:", result["checksum"])
     print("\ncue_reference_text:")
     for cue_index, text in sorted(result["cue_reference_text"].items()):
@@ -242,3 +308,70 @@ if __name__ == "__main__":
             f"  cues={diff['cue_indices']} | "
             f"video={diff['video_text']!r} | ref={diff['reference_text']!r}"
         )
+
+    if not any(
+        "Hello" in d["video_text"] and "Help" in d["reference_text"]
+        for d in result["differences"]
+    ):
+        raise AssertionError("caso base: se esperaba Hello vs Help en differences")
+    print("OK caso base")
+
+    print("\n=== ruido filtrado ===")
+
+    _assert_noise_filtered(
+        "trivial A vs the",
+        {
+            0: {"index": 0, "start": 0.0, "end": 1.0, "text": "A man walks"},
+        },
+        "the man walks",
+        noise_substrings=[("A", "the")],
+        expected_cue_text={0: "the man walks"},
+    )
+
+    _assert_noise_filtered(
+        "censura con asterisco",
+        {
+            0: {"index": 0, "start": 0.0, "end": 1.0, "text": "SHIT happens"},
+        },
+        "sh*t happens",
+        noise_substrings=[("SHIT", "sh*t")],
+        expected_cue_text={0: "sh*t happens"},
+    )
+
+    _assert_noise_filtered(
+        "desproporcionado créditos vs 400",
+        {
+            0: {
+                "index": 0,
+                "start": 0.0,
+                "end": 1.0,
+                "text": "Captions made possible",
+            },
+            1: {
+                "index": 1,
+                "start": 1.0,
+                "end": 2.0,
+                "text": "by HOME BOX OFFICE",
+            },
+            2: {
+                "index": 2,
+                "start": 2.0,
+                "end": 3.0,
+                "text": "FOUR HUNDRED",
+            },
+        },
+        "400",
+        noise_substrings=[
+            (
+                "Captions made possible",
+                "400",
+            )
+        ],
+        expected_cue_text={
+            0: "400",
+            1: "",
+            2: "",
+        },
+    )
+
+    print("\nTodos los tests OK")

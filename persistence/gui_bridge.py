@@ -237,6 +237,17 @@ def clip_to_segment(clip: Clip, extras: dict[str, Any] | None = None) -> dict:
     return seg
 
 
+def reference_alignment_from_dict(data: dict | None) -> dict | None:
+    """Restaura gui_reference_map desde JSON (claves int en cue_reference_text)."""
+    if not data:
+        return None
+    restored = dict(data)
+    cue_text = restored.get("cue_reference_text")
+    if isinstance(cue_text, dict):
+        restored["cue_reference_text"] = {int(k): v for k, v in cue_text.items()}
+    return restored
+
+
 def build_project_from_gui(
     *,
     series_name: str,
@@ -258,6 +269,7 @@ def build_project_from_gui(
     root_dir: str,
     padding_start: float = 0.0,
     padding_end: float = 0.0,
+    reference_alignment: dict | None = None,
 ) -> Project:
     output_dir = "output_files"
     if video_path:
@@ -294,6 +306,8 @@ def build_project_from_gui(
     media_info["gui_parser_options"] = parser_options_to_dict(parser_options)
     if clips_extra:
         media_info["gui_clips_extra"] = clips_extra
+    if reference_alignment is not None:
+        media_info["gui_reference_map"] = reference_alignment
 
     episode = Episode(
         video_path=video_path or "",
@@ -346,6 +360,7 @@ class LoadedGuiState:
     root_dir: str
     padding_start: float
     padding_end: float
+    reference_alignment: dict | None
 
 
 def load_gui_state_from_project(project: Project) -> LoadedGuiState:
@@ -356,6 +371,9 @@ def load_gui_state_from_project(project: Project) -> LoadedGuiState:
     media_info = dict(episode.media_info or {})
     parser_options = parser_options_from_dict(media_info.pop("gui_parser_options", {}))
     clips_extra = media_info.pop("gui_clips_extra", {})
+    reference_alignment = reference_alignment_from_dict(
+        media_info.pop("gui_reference_map", None)
+    )
 
     cue_map = subtitle_cues_to_map(episode.subtitles)
     segments = []
@@ -387,4 +405,5 @@ def load_gui_state_from_project(project: Project) -> LoadedGuiState:
         root_dir=project.root_dir,
         padding_start=episode.padding_start,
         padding_end=episode.padding_end,
+        reference_alignment=reference_alignment,
     )

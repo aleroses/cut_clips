@@ -1927,12 +1927,14 @@ class MainWindow(QMainWindow):
         seg = self._get_selected_segment()
         if seg is None:
             return
-        pending = self._pending_segments()
-        idx = next((i for i, s in enumerate(pending) if s["id"] == seg["id"]), None)
-        if idx is None or idx + 1 >= len(pending):
+        active = [s for s in self.segments if s["status"] != "deleted"]
+        idx = next((i for i, s in enumerate(active) if s["id"] == seg["id"]), None)
+        if idx is None or idx + 1 >= len(active):
             QMessageBox.information(self, "No se puede fusionar", "No hay una línea siguiente para fusionar.")
             return
-        nxt = pending[idx + 1]
+        nxt = active[idx + 1]
+        seg_prev_status = seg["status"]
+        nxt_prev_status = nxt["status"]
         self._push_undo()
         merged_indices = list(seg.get("cue_indices", [])) + list(nxt.get("cue_indices", []))
         seg["cue_indices"] = merged_indices
@@ -1941,17 +1943,31 @@ class MainWindow(QMainWindow):
         else:
             seg["text"] = f"{seg['text']} {nxt['text']}"
             seg["end"] = nxt["end"]
-        if seg["status"] == "preview":
+        if seg_prev_status == "preview":
             seg.pop("preview_start", None)
             seg.pop("preview_end", None)
             seg["status"] = "pending"
+        elif seg_prev_status in ("exported", "outdated"):
+            seg["status"] = "pending"
+            seg.pop("preview_start", None)
+            seg.pop("preview_end", None)
+            seg.pop("generation_fingerprint", None)
+            seg.pop("video_path", None)
+            seg.pop("audio_path", None)
         nxt["status"] = "deleted"
         self._refresh_list(select_id=seg["id"])
         self._sync_editor_widgets_to_segment(seg)
         self._mark_project_modified()
-        self.statusBar().showMessage(
-            f"Fusionado: clip id={seg['id']} ahora incluye {self._format_cue_summary(merged_indices)}."
+        msg = (
+            f"Fusionado: clip id={seg['id']} ahora incluye "
+            f"{self._format_cue_summary(merged_indices)}."
         )
+        if nxt_prev_status in ("exported", "outdated"):
+            msg += (
+                f" El clip id={nxt['id']} fusionado puede haber dejado "
+                f"archivos huérfanos en disco."
+            )
+        self.statusBar().showMessage(msg)
 
     def delete_selected(self):
         seg = self._get_selected_segment()

@@ -35,7 +35,9 @@ def guess_series_name(video_path: str) -> str:
     cleaned = re.sub(r"[Ss]\d{1,2}[Ee]\d{1,2}.*$", "", base)
     cleaned = re.sub(r"[Ee]p(?:isode)?[\s_-]*\d+.*$", "", cleaned)
     cleaned = cleaned.strip(" -_.")
-    return cleaned or "Series"
+    parts = re.split(r"[.\s_-]+", cleaned)
+    normalized = "_".join(p for p in parts if p)
+    return normalized or "Series"
 
 
 def parse_season_episode(raw_title: str | None, *, default_season: int = 1) -> tuple[int, int]:
@@ -213,6 +215,7 @@ def segment_to_clip(
         clip.video_path = webm_path
         clip.audio_path = mp3_path
     clip.generation_fingerprint = dict(seg.get("generation_fingerprint", {}))
+    clip.translation = str(seg.get("translation", ""))
     return clip
 
 
@@ -234,6 +237,8 @@ def clip_to_segment(clip: Clip, extras: dict[str, Any] | None = None) -> dict:
         seg["preview_end"] = extras.get("preview_end", clip.end)
     if clip.generation_fingerprint:
         seg["generation_fingerprint"] = dict(clip.generation_fingerprint)
+    if clip.translation:
+        seg["translation"] = clip.translation
     return seg
 
 

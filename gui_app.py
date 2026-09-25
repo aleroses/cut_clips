@@ -285,6 +285,8 @@ class MainWindow(QMainWindow):
     _REFERENCE_STYLE_WARNING = (
         "QPlainTextEdit { background-color: #fff3cd; border: 1px solid #ffc107; }"
     )
+    _DEEPL_CONFIG_DIR = os.path.expanduser("~/.config/anki_video_tool")
+    _DEEPL_KEY_FILE = os.path.join(_DEEPL_CONFIG_DIR, "deepl_key.txt")
 
     def __init__(self):
         super().__init__()
@@ -495,9 +497,13 @@ class MainWindow(QMainWindow):
             self._clear_project_modified()
             msg = f"Proyecto guardado: {self._project_path}"
             try:
-                tsv_name = self._auto_export_tsv()
+                tsv_name, new_trans, trans_note = self._auto_export_tsv()
                 if tsv_name:
                     msg += f". TSV exportado a {tsv_name}"
+                    if new_trans:
+                        msg += f" ({new_trans} traducciones nuevas)"
+                if trans_note:
+                    msg += f". {trans_note}"
             except Exception as e:
                 msg += f". TSV no exportado: {e}"
             self.statusBar().showMessage(msg)
@@ -532,9 +538,13 @@ class MainWindow(QMainWindow):
             self._clear_project_modified()
             msg = f"Proyecto guardado: {path}"
             try:
-                tsv_name = self._auto_export_tsv()
+                tsv_name, new_trans, trans_note = self._auto_export_tsv()
                 if tsv_name:
                     msg += f". TSV exportado a {tsv_name}"
+                    if new_trans:
+                        msg += f" ({new_trans} traducciones nuevas)"
+                if trans_note:
+                    msg += f". {trans_note}"
             except Exception as e:
                 msg += f". TSV no exportado: {e}"
             self.statusBar().showMessage(msg)
@@ -1196,10 +1206,20 @@ class MainWindow(QMainWindow):
         self.deepl_key_edit.setPlaceholderText(
             "Opcional — o deja vacío y usa la variable de entorno DEEPL_API_KEY"
         )
-        env_key = os.environ.get("DEEPL_API_KEY")
-        if env_key:
-            self.deepl_key_edit.setText(env_key)
-        key_row.addWidget(self.deepl_key_edit)
+        key_row.addWidget(self.deepl_key_edit, stretch=1)
+        self.remember_deepl_key_checkbox = QCheckBox("Recordar API key")
+        self.remember_deepl_key_checkbox.setChecked(True)
+        self.remember_deepl_key_checkbox.toggled.connect(self._on_remember_deepl_key_toggled)
+        key_row.addWidget(self.remember_deepl_key_checkbox)
+        self.deepl_key_edit.blockSignals(True)
+        if os.path.isfile(self._DEEPL_KEY_FILE):
+            self._load_deepl_key_from_config()
+        else:
+            env_key = os.environ.get("DEEPL_API_KEY")
+            if env_key:
+                self.deepl_key_edit.setText(env_key)
+        self.deepl_key_edit.blockSignals(False)
+        self.deepl_key_edit.textChanged.connect(self._on_deepl_key_changed)
         translate_layout.addLayout(key_row)
 
         left_layout.addWidget(translate_group)
@@ -2162,10 +2182,47 @@ class MainWindow(QMainWindow):
             return
         super().keyPressEvent(event)
 
+    def _load_deepl_key_from_config(self) -> None:
+        if not os.path.isfile(self._DEEPL_KEY_FILE):
+            return
+        with open(self._DEEPL_KEY_FILE, encoding="utf-8") as f:
+            key = f.read().strip()
+        if key:
+            self.deepl_key_edit.setText(key)
+
+    def _clear_deepl_key_config(self) -> None:
+        try:
+            os.remove(self._DEEPL_KEY_FILE)
+        except FileNotFoundError:
+            pass
+
+    def _save_deepl_key_to_config(self) -> None:
+        if not self.remember_deepl_key_checkbox.isChecked():
+            self._clear_deepl_key_config()
+            return
+        key = self.deepl_key_edit.text().strip()
+        if not key:
+            self._clear_deepl_key_config()
+            return
+        os.makedirs(self._DEEPL_CONFIG_DIR, exist_ok=True)
+        with open(self._DEEPL_KEY_FILE, "w", encoding="utf-8") as f:
+            f.write(key)
+
+    def _on_deepl_key_changed(self) -> None:
+        if self.remember_deepl_key_checkbox.isChecked():
+            self._save_deepl_key_to_config()
+
+    def _on_remember_deepl_key_toggled(self, checked: bool) -> None:
+        if checked:
+            self._save_deepl_key_to_config()
+        else:
+            self._clear_deepl_key_config()
+
     def closeEvent(self, event):
         if not self._prompt_save_before_close():
             event.ignore()
             return
+        self._save_deepl_key_to_config()
         self._shutdown_mpv_player()
         super().closeEvent(event)
 
@@ -2567,30 +2624,70 @@ class MainWindow(QMainWindow):
 
     # -- Exportar TSV ---------------------------------------------------------
 
+    def _translation_cache_path(self, fallback_dir: str | None = None) -> str:
+        if self._project_path:
+            return os.path.join(
+                os.path.dirname(self._project_path), "translations_cache.json"
+            )
+        if fallback_dir:
+            return os.path.join(fallback_dir, "translations_cache.json")
+        return os.path.join(".", "translations_cache.json")
+
+    def _count_tsv_data_lines(self, path: str) -> int:
+        if not os.path.isfile(path):
+            return 0
+        with open(path, encoding="utf-8") as f:
+            lines = [line for line in f if line.strip()]
+        if not lines:
+            return 0
+        first = lines[0]
+        first_lower = first.lower()
+        looks_like_header = (
+            "english" in first_lower
+            or "spanish" in first_lower
+            or not (len(first) >= 5 and first[:4].isdigit() and first[4] == "\t")
+        )
+        if looks_like_header:
+            return max(0, len(lines) - 1)
+        return len(lines)
+
+    def _should_skip_tsv_overwrite(self, tsv_path: str, new_row_count: int) -> str | None:
+        existing = self._count_tsv_data_lines(tsv_path)
+        if existing > 0 and new_row_count < existing:
+            return (
+                f"El TSV existente tiene más líneas ({existing}) que las que se "
+                f"generarían ahora ({new_row_count}) — no se sobrescribió, "
+                f"revisa manualmente"
+            )
+        return None
+
     def _build_tsv_rows(self) -> list[tuple]:
-        """Filas TSV para segmentos exportados: (seq_num, text, video, audio, episode, title)."""
+        """Filas TSV para clips exported/outdated: (seq_num, text, video, audio, episode, title, translation)."""
         series_name = self._effective_series_name()
         file_episode_label = self._file_episode_label()
         rows = []
         for seg in self.segments:
-            if seg["status"] != "exported":
+            if seg.get("status") not in ("exported", "outdated"):
                 continue
             seq_num = self._export_sequence_number(seg["id"])
             video_filename = clip_video_filename(series_name, file_episode_label, seq_num)
             audio_filename = clip_audio_filename(series_name, file_episode_label, seq_num)
             rows.append((
                 seq_num, seg["text"], video_filename, audio_filename,
-                file_episode_label, self.episode_title,
+                file_episode_label, self.episode_title, seg.get("translation", ""),
             ))
         return rows
 
-    def _auto_export_tsv(self) -> str | None:
-        """Escribe TSV junto al .anki-project.json. Devuelve basename o None si omitido."""
+    def _auto_export_tsv(self) -> tuple[str | None, int, str | None]:
+        """Escribe TSV junto al .anki-project.json.
+
+        Devuelve (tsv_basename, nuevas_traducciones, aviso_traducción).
+        """
         if not self._project_path:
-            return None
+            return None, 0, None
         tsv_rows = self._build_tsv_rows()
         if not tsv_rows:
-            return None
+            return None, 0, None
 
         series_name = self._effective_series_name()
         file_episode_label = self._file_episode_label()
@@ -2598,41 +2695,89 @@ class MainWindow(QMainWindow):
         basename = tsv_filename(series_name, file_episode_label, title)
         tsv_path = os.path.join(os.path.dirname(self._project_path), basename)
 
-        translations: dict[str, str] = {}
+        new_translation_count = 0
+        translation_note: str | None = None
+
         if self.translate_checkbox.isChecked():
-            cache_path = os.path.join(
-                os.path.dirname(self._project_path), "translations_cache.json"
-            )
-            cache = load_translation_cache(cache_path)
-            for _, text, *_ in tsv_rows:
-                if text in cache:
+            pending_texts = [
+                seg["text"]
+                for seg in self.segments
+                if seg.get("status") in ("exported", "outdated")
+                and not seg.get("translation")
+            ]
+            pending_unique = list(dict.fromkeys(pending_texts))
+
+            if pending_unique:
+                api_key = self.deepl_key_edit.text().strip()
+                if api_key:
+                    cache_path = self._translation_cache_path()
+                    cache_before = load_translation_cache(cache_path)
+                    try:
+                        api_results = translate_texts(
+                            pending_unique, api_key, "ES", cache_path
+                        )
+                        new_translation_count = sum(
+                            1 for t in pending_unique
+                            if t not in cache_before and api_results.get(t)
+                        )
+                        for seg in self.segments:
+                            if seg.get("status") in ("exported", "outdated"):
+                                if seg["text"] in api_results:
+                                    seg["translation"] = api_results[seg["text"]]
+                        if new_translation_count:
+                            self._mark_project_modified()
+                    except Exception as e:
+                        translation_note = (
+                            f"{len(pending_unique)} clip(s) sin traducir: {e}"
+                        )
+
+        tsv_rows = self._build_tsv_rows()
+
+        translations: dict[str, str] = {}
+        rows_for_write = []
+        for row in tsv_rows:
+            seq, text, vid, aud, ep, ep_title, seg_translation = row
+            rows_for_write.append((seq, text, vid, aud, ep, ep_title))
+            if seg_translation:
+                translations[text] = seg_translation
+
+        if self.translate_checkbox.isChecked():
+            cache = load_translation_cache(self._translation_cache_path())
+            for _, text, *_ in rows_for_write:
+                if not translations.get(text) and text in cache:
                     translations[text] = cache[text]
 
-        write_anki_tsv(tsv_path, tsv_rows, translations)
-        return basename
+        skip_msg = self._should_skip_tsv_overwrite(tsv_path, len(rows_for_write))
+        if skip_msg:
+            self.statusBar().showMessage(skip_msg)
+            return None, 0, translation_note
+
+        write_anki_tsv(tsv_path, rows_for_write, translations)
+        return basename, new_translation_count, translation_note
 
     def export_tsv(self):
         if not self.segments:
             QMessageBox.information(self, "Nada que exportar", "No hay oraciones cargadas.")
             return
 
-        exported = [s for s in self.segments if s["status"] == "exported"]
+        exportable = [
+            s for s in self.segments if s.get("status") in ("exported", "outdated")
+        ]
         outdated = [s for s in self.segments if s["status"] == "outdated"]
         if outdated:
-            QMessageBox.warning(
+            QMessageBox.information(
                 self,
                 "Clips desactualizados",
-                f"{len(outdated)} clip(s) tienen cambios sin regenerar.\n\n"
-                "Regenera los clips marcados [OUTDATED] antes de exportar, "
-                "o el TSV no coincidirá con los archivos en disco."
+                f"{len(outdated)} clip(s) están marcados [OUTDATED] "
+                "(cambios de padding, pistas, etc.).\n\n"
+                "Se incluirán en el TSV junto con los exportados; regenera los clips "
+                "si necesitas archivos en disco alineados con la config actual."
             )
-        if not exported:
-            if outdated:
-                return
+        if not exportable:
             QMessageBox.information(
                 self, "Nada que exportar",
-                "No hay clips generados y actualizados.\n"
-                "Regenera los clips [OUTDATED] o genera nuevos antes de exportar el TSV."
+                "No hay clips generados (exported u outdated).\n"
+                "Genera clips antes de exportar el TSV."
             )
             return
 
@@ -2641,6 +2786,8 @@ class MainWindow(QMainWindow):
             return
 
         tsv_rows = self._build_tsv_rows()
+        rows_for_write = [row[:6] for row in tsv_rows]
+        used_fallback_cache = self._project_path is None
 
         translations = {}
         if self.translate_checkbox.isChecked():
@@ -2652,15 +2799,33 @@ class MainWindow(QMainWindow):
                     "El TSV se exportará sin traducción."
                 )
             else:
-                cache_path = os.path.join(os.path.dirname(path), "translations_cache.json")
-                all_texts = [text for _, text, _, _, _, _ in tsv_rows]
+                cache_path = self._translation_cache_path(
+                    fallback_dir=os.path.dirname(path)
+                )
+                all_texts = [row[1] for row in tsv_rows]
                 try:
                     translations = translate_texts(all_texts, api_key, "ES", cache_path)
+                    for seg in self.segments:
+                        if seg.get("status") in ("exported", "outdated"):
+                            seg["translation"] = translations.get(seg["text"], "")
+                    self._mark_project_modified()
                 except Exception as e:
                     QMessageBox.critical(self, "Error de traducción", str(e))
 
-        write_anki_tsv(path, tsv_rows, translations)
-        QMessageBox.information(self, "Exportado", f"TSV guardado en:\n{path}")
+        skip_msg = self._should_skip_tsv_overwrite(path, len(rows_for_write))
+        if skip_msg:
+            self.statusBar().showMessage(skip_msg)
+            QMessageBox.warning(self, "TSV no sobrescrito", skip_msg)
+            return
+
+        write_anki_tsv(path, rows_for_write, translations)
+        success_msg = f"TSV guardado en:\n{path}"
+        if used_fallback_cache and self.translate_checkbox.isChecked() and translations:
+            success_msg += (
+                "\n\nLas traducciones se guardaron en la caché junto al TSV. "
+                "Guarda el proyecto para que persistan correctamente en el directorio del proyecto."
+            )
+        QMessageBox.information(self, "Exportado", success_msg)
 
 
 def main():

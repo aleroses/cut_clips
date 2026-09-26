@@ -74,10 +74,10 @@ def parse_srt_blocks(path, offset=0.0, scale=1.0):
     return blocks
 
 
-def clean_text(raw_text, fix_punctuation_spacing=True):
+def clean_text(raw_text, apply_punctuation_fix=True):
     """Quita etiquetas (efectos de sonido / hablante) entre () y [].
 
-    fix_punctuation_spacing: en inglés/español, el SDH suele dejar un
+    apply_punctuation_fix: en inglés/español, el SDH suele dejar un
     espacio antes de la puntuación (ej. "again ?") que hay que quitar. En
     FRANCÉS esto es INCORRECTO: la tipografía francesa exige un espacio
     antes de ? ! ; : — por eso este comportamiento es configurable en vez
@@ -86,8 +86,8 @@ def clean_text(raw_text, fix_punctuation_spacing=True):
     cleaned = re.sub(r"\([^)]*\)", "", raw_text)
     cleaned = re.sub(r"\[[^\]]*\]", "", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    if fix_punctuation_spacing:
-        cleaned = re.sub(r"\s+([?.!,;:])", r"\1", cleaned)
+    if apply_punctuation_fix:
+        cleaned = fix_punctuation_spacing(cleaned)
     return cleaned
 
 
@@ -119,6 +119,18 @@ def _restore_html_tags(text: str, tags: list[str]) -> str:
     for i, tag in enumerate(tags):
         text = text.replace(f"\uE000{i}\uE001", tag)
     return text
+
+
+_PUNCT_SPACE_RE = re.compile(r"\s+([?!:;,.])")
+
+
+def fix_punctuation_spacing(text: str) -> str:
+    """Quita espacios antes de ! ? : ; , . sin alterar tags HTML."""
+    if not text:
+        return text
+    protected, tags = _protect_html_tags(text)
+    protected = _PUNCT_SPACE_RE.sub(r"\1", protected)
+    return _restore_html_tags(protected, tags)
 
 
 def normalize_case(text, language="en"):
@@ -170,7 +182,7 @@ def apply_boundary_trim(start, end, trim_start, trim_end, min_duration=0.3):
 
 
 def group_into_sentences(blocks, trim_start=0.0, trim_end=0.0,
-                          language="en", fix_punctuation_spacing=True):
+                          language="en", apply_punctuation_fix=True):
     """Agrupa bloques consecutivos hasta encontrar puntuación de cierre.
     Descarta bloques que quedan vacíos tras limpiar (solo efectos de sonido).
     Aplica trim_start/trim_end a los límites de cada oración ya agrupada.
@@ -184,7 +196,7 @@ def group_into_sentences(blocks, trim_start=0.0, trim_end=0.0,
     buffer_cue_indices = []
 
     for block_idx, block in enumerate(blocks):
-        cleaned = clean_text(block["raw_text"], fix_punctuation_spacing=fix_punctuation_spacing)
+        cleaned = clean_text(block["raw_text"], apply_punctuation_fix=apply_punctuation_fix)
 
         if not cleaned:
             discarded += 1
@@ -202,10 +214,13 @@ def group_into_sentences(blocks, trim_start=0.0, trim_end=0.0,
             trimmed_start, trimmed_end = apply_boundary_trim(
                 buffer_start, buffer_end, trim_start, trim_end
             )
+            text = normalize_case(combined, language=language)
+            if apply_punctuation_fix:
+                text = fix_punctuation_spacing(text)
             sentences.append({
                 "start": trimmed_start,
                 "end": trimmed_end,
-                "text": normalize_case(combined, language=language),
+                "text": text,
                 "cue_indices": list(buffer_cue_indices),
             })
             buffer_parts = []
@@ -218,10 +233,13 @@ def group_into_sentences(blocks, trim_start=0.0, trim_end=0.0,
         trimmed_start, trimmed_end = apply_boundary_trim(
             buffer_start, buffer_end, trim_start, trim_end
         )
+        text = normalize_case(combined, language=language)
+        if apply_punctuation_fix:
+            text = fix_punctuation_spacing(text)
         sentences.append({
             "start": trimmed_start,
             "end": trimmed_end,
-            "text": normalize_case(combined, language=language),
+            "text": text,
             "cue_indices": list(buffer_cue_indices),
         })
 
@@ -284,12 +302,14 @@ def generate_sentences(srt_path, offset=0.0, scale=1.0,
     True/False explícitamente para forzar el comportamiento.
     """
     if fix_punctuation_spacing is None:
-        fix_punctuation_spacing = (language != "fr")
+        apply_punctuation_fix = (language != "fr")
+    else:
+        apply_punctuation_fix = fix_punctuation_spacing
 
     blocks = parse_srt_blocks(srt_path, offset=offset, scale=scale)
     sentences, discarded = group_into_sentences(
         blocks, trim_start=trim_start, trim_end=trim_end,
-        language=language, fix_punctuation_spacing=fix_punctuation_spacing,
+        language=language, apply_punctuation_fix=apply_punctuation_fix,
     )
     sentences = apply_global_shift(sentences, shift)
 
@@ -322,3 +342,16 @@ def write_sentences_csv(path, sentences):
                 duration,
                 s["text"],
             ])
+
+
+if __name__ == "__main__":
+    cases = [
+        ("God !", "God!"),
+        ("OFFERED YOU A CHANCE TO LIVE AGAIN ?", "OFFERED YOU A CHANCE TO LIVE AGAIN?"),
+        ("Hello <i>world</i> !", "Hello <i>world</i>!"),
+    ]
+    for raw, expected in cases:
+        got = fix_punctuation_spacing(raw)
+        assert got == expected, (raw, got, expected)
+        assert fix_punctuation_spacing(got) == got
+    print("fix_punctuation_spacing: OK (4 casos)")

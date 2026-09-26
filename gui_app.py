@@ -49,7 +49,7 @@ from PySide6.QtWidgets import (
     QProgressBar, QScrollArea,
 )
 
-from core.subtitle_parser import generate_sentences, normalize_case, parse_srt_blocks
+from core.subtitle_parser import generate_sentences, normalize_case, fix_punctuation_spacing, parse_srt_blocks
 from core.clip_engine import (
     cut_single_clip, write_anki_tsv, detect_video_title,
     extract_episode_title, translate_texts, compute_padded_window,
@@ -1790,7 +1790,10 @@ class MainWindow(QMainWindow):
         combined = " ".join(parts)
         if not combined:
             return combined
-        return normalize_case(combined, language=self.parser_options.language)
+        text = normalize_case(combined, language=self.parser_options.language)
+        if self.parser_options.language != "fr":
+            text = fix_punctuation_spacing(text)
+        return text
 
     def _bounds_from_cue_indices(self, cue_indices: list) -> tuple[float, float]:
         starts, ends = [], []

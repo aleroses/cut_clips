@@ -18,7 +18,7 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from core.clip_engine import load_translation_cache, sanitize_filename_component, write_anki_tsv
+from core.clip_engine import load_translation_cache, lookup_cached_translation, sanitize_filename_component, write_anki_tsv
 from core.naming import clip_audio_filename, clip_video_filename, format_episode_label, tsv_filename
 from persistence.gui_bridge import export_sequence_number, load_gui_state_from_project
 from persistence.store import load_project
@@ -70,14 +70,17 @@ def build_rows_from_project(project_path: str):
     # Respaldo: caché junto al proyecto
     cache_path = os.path.join(os.path.dirname(os.path.abspath(project_path)), "translations_cache.json")
     cache = load_translation_cache(cache_path)
+    provider = state.translation_provider if state.translation_provider != "none" else "deepl"
     rows_for_write = []
     for seq, text, vid, aud, ep, title, seg_translation in rows_full:
         rows_for_write.append((seq, text, vid, aud, ep, title))
         if not translations.get(text):
             if seg_translation:
                 translations[text] = seg_translation
-            elif text in cache:
-                translations[text] = cache[text]
+            else:
+                cached = lookup_cached_translation(cache, provider, text)
+                if cached:
+                    translations[text] = cached
 
     title_slug = episode_title or None
     basename = tsv_filename(series_name, file_episode_label, title_slug)

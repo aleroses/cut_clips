@@ -269,7 +269,7 @@ def build_project_from_gui(
     parser_options: ParserOptions,
     cue_map: dict[int, dict],
     segments: list[dict],
-    translate_enabled: bool,
+    translation_provider: str,
     last_clip_id: int,
     root_dir: str,
     padding_start: float = 0.0,
@@ -330,7 +330,7 @@ def build_project_from_gui(
         subtitles=cues_to_subtitle_cues(cue_map),
         clips=clips,
         translation=TranslationConfig(
-            provider="deepl" if translate_enabled else "none",
+            provider=translation_provider,
             target_lang="ES",
         ),
         output_dir=output_dir,
@@ -361,7 +361,7 @@ class LoadedGuiState:
     cue_map: dict[int, dict]
     segments: list[dict]
     next_id: int
-    translate_enabled: bool
+    translation_provider: str
     root_dir: str
     padding_start: float
     padding_end: float
@@ -406,7 +406,7 @@ def load_gui_state_from_project(project: Project) -> LoadedGuiState:
         cue_map=cue_map,
         segments=segments,
         next_id=next_id,
-        translate_enabled=episode.translation.provider != "none",
+        translation_provider=episode.translation.provider or "none",
         root_dir=project.root_dir,
         padding_start=episode.padding_start,
         padding_end=episode.padding_end,

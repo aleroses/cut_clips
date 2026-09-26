@@ -80,41 +80,217 @@ def sanitize_filename_component(text):
 
 
 # ---------------------------------------------------------------------------
-# Traducción (DeepL) con caché local
+# Traducción con caché local (DeepL / Gemini)
 # ---------------------------------------------------------------------------
+
+def _is_legacy_flat_cache(raw: dict) -> bool:
+    return bool(raw) and all(isinstance(v, str) for v in raw.values())
+
+
+def normalize_translation_cache(raw: dict | None) -> dict[str, dict[str, str]]:
+    if not raw:
+        return {"deepl": {}, "gemini": {}}
+    if "deepl" in raw or "gemini" in raw:
+        return {
+            "deepl": dict(raw.get("deepl") or {}),
+            "gemini": dict(raw.get("gemini") or {}),
+        }
+    if _is_legacy_flat_cache(raw):
+        return {"deepl": dict(raw), "gemini": {}}
+    return {"deepl": {}, "gemini": {}}
+
 
 def load_translation_cache(cache_path):
     if os.path.exists(cache_path):
         with open(cache_path, encoding="utf-8") as f:
-            return json.load(f)
-    return {}
+            raw = json.load(f)
+        return normalize_translation_cache(raw)
+    return {"deepl": {}, "gemini": {}}
 
 
 def save_translation_cache(cache_path, cache):
+    normalized = normalize_translation_cache(cache)
     with open(cache_path, "w", encoding="utf-8") as f:
-        json.dump(cache, f, ensure_ascii=False, indent=2)
+        json.dump(normalized, f, ensure_ascii=False, indent=2)
+
+
+def lookup_cached_translation(cache, provider: str, text: str) -> str | None:
+    bucket = cache.get(provider, {})
+    val = bucket.get(text)
+    return val if val else None
 
 
 def translate_texts(texts, api_key, target_lang, cache_path):
     """Traduce una lista de textos usando DeepL, reutilizando una caché
-    local (JSON) para no volver a traducir líneas ya traducidas antes."""
+    local (JSON) para no volver a traducir líneas ya traducidas antes.
+
+    Devuelve (traducciones_por_texto, textos_fallidos). Las traducciones
+    vacías no se guardan en caché."""
     import deepl
 
     cache = load_translation_cache(cache_path)
-    to_translate = [t for t in set(texts) if t not in cache]
+    bucket = cache["deepl"]
+    to_translate = [t for t in dict.fromkeys(texts) if not bucket.get(t)]
+    failed: list[str] = []
 
     if to_translate:
-        translator = deepl.Translator(api_key)
-        print(f"Traduciendo {len(to_translate)} línea(s) nueva(s) con DeepL "
-              f"(ya en caché: {len(set(texts)) - len(to_translate)})...")
-        results = translator.translate_text(to_translate, target_lang=target_lang)
-        for original, result in zip(to_translate, results):
-            cache[original] = result.text
-        save_translation_cache(cache_path, cache)
+        try:
+            translator = deepl.Translator(api_key)
+            print(f"Traduciendo {len(to_translate)} línea(s) nueva(s) con DeepL "
+                  f"(ya en caché: {len(set(texts)) - len(to_translate)})...")
+            results = translator.translate_text(to_translate, target_lang=target_lang)
+            cache_dirty = False
+            for original, result in zip(to_translate, results):
+                translation = (result.text or "").strip()
+                if translation:
+                    bucket[original] = translation
+                    cache_dirty = True
+                else:
+                    failed.append(original)
+                    if original in bucket:
+                        del bucket[original]
+                        cache_dirty = True
+            if cache_dirty:
+                cache["deepl"] = bucket
+                save_translation_cache(cache_path, cache)
+        except Exception as e:
+            raise RuntimeError(f"DeepL: {e}") from e
     else:
         print("Todas las líneas ya estaban traducidas en la caché, no se llamó a la API.")
 
-    return {t: cache[t] for t in texts}
+    return {t: bucket.get(t, "") for t in texts}, failed
+
+
+_GEMINI_NUMBERED_LINE_RE = re.compile(r"^\s*(\d+)\.\s*(.+)$", re.MULTILINE)
+
+
+def _gemini_target_language_label(target_lang: str) -> str:
+    lang = (target_lang or "ES").upper()
+    if lang.startswith("ES"):
+        return "español latinoamericano neutro"
+    return target_lang
+
+
+def _gemini_translation_instructions(target_lang: str) -> str:
+    lang_label = _gemini_target_language_label(target_lang)
+    return (
+        f"Traduce cada línea al {lang_label} con tono coloquial de diálogo "
+        f"hablado (no estilo de doblaje de España). "
+        f"Preserva etiquetas HTML como <i></i> sin traducir el marcado HTML. "
+        f"No añadas explicaciones ni texto extra: responde solo con las "
+        f"traducciones numeradas en el mismo formato de entrada."
+    )
+
+
+def _format_numbered_texts(texts: list[str]) -> str:
+    return "\n".join(f"{i + 1}. {text}" for i, text in enumerate(texts))
+
+
+def _parse_gemini_numbered_response(response_text: str, count: int) -> list[str]:
+    matches: dict[int, str] = {}
+    for match in _GEMINI_NUMBERED_LINE_RE.finditer(response_text.strip()):
+        idx = int(match.group(1))
+        matches[idx] = match.group(2).strip()
+    return [matches.get(i + 1, "") for i in range(count)]
+
+
+def _gemini_response_text(response) -> str:
+    return getattr(response, "text", "") or ""
+
+
+def _translate_gemini_batch(client, texts: list[str], target_lang: str) -> list[str]:
+    prompt = (
+        f"{_gemini_translation_instructions(target_lang)}\n\n"
+        f"{_format_numbered_texts(texts)}"
+    )
+    response = client.models.generate_content(model=_GEMINI_MODEL, contents=prompt)
+    response_text = _gemini_response_text(response)
+    return _parse_gemini_numbered_response(response_text, len(texts))
+
+
+def _translate_gemini_one_by_one(client, texts: list[str], target_lang: str) -> list[str]:
+    translations = []
+    instructions = _gemini_translation_instructions(target_lang)
+    for text in texts:
+        prompt = f"{instructions}\n\nTraduce esta única línea:\n{text}"
+        response = client.models.generate_content(model=_GEMINI_MODEL, contents=prompt)
+        response_text = _gemini_response_text(response)
+        translations.append(response_text.strip())
+    return translations
+
+
+_GEMINI_MODEL = "gemini-flash-latest"
+
+
+def _raise_gemini_error(exc: Exception) -> None:
+    if isinstance(exc, RuntimeError) and str(exc).startswith("Gemini:"):
+        raise exc
+    msg = str(exc).lower()
+    exc_name = type(exc).__name__.lower()
+    model_unavailable = (
+        "not found" in msg
+        or "404" in msg
+        or "does not exist" in msg
+        or "invalid model" in msg
+        or "unknown model" in msg
+        or "modelnotfound" in exc_name
+        or ("model" in msg and "not" in msg)
+    )
+    if model_unavailable:
+        raise RuntimeError(
+            "Gemini: El modelo de Gemini configurado no está disponible para tu "
+            "API key; verifica el nombre del modelo en Google AI Studio"
+        ) from exc
+    raise RuntimeError(f"Gemini: {exc}") from exc
+
+
+def translate_texts_gemini(texts, api_key, target_lang, cache_path):
+    """Traduce una lista de textos usando Gemini, reutilizando caché local.
+
+    Devuelve (traducciones_por_texto, textos_fallidos). Las traducciones
+    vacías no se guardan en caché."""
+    try:
+        from google import genai
+    except ImportError as e:
+        raise RuntimeError(
+            "Gemini: falta el paquete google-genai. "
+            "Instálalo con: pip install google-genai"
+        ) from e
+
+    try:
+        cache = load_translation_cache(cache_path)
+        bucket = cache["gemini"]
+        to_translate = [t for t in dict.fromkeys(texts) if not bucket.get(t)]
+        failed: list[str] = []
+
+        if to_translate:
+            client = genai.Client(api_key=api_key)
+            print(f"Traduciendo {len(to_translate)} línea(s) nueva(s) con Gemini "
+                  f"(ya en caché: {len(set(texts)) - len(to_translate)})...")
+            parsed = _translate_gemini_batch(client, to_translate, target_lang)
+            if len([p for p in parsed if p]) != len(to_translate):
+                print("Gemini: respuesta batch incompleta, traduciendo línea a línea...")
+                parsed = _translate_gemini_one_by_one(client, to_translate, target_lang)
+            cache_dirty = False
+            for original, translation in zip(to_translate, parsed):
+                translation = (translation or "").strip()
+                if translation:
+                    bucket[original] = translation
+                    cache_dirty = True
+                else:
+                    failed.append(original)
+                    if original in bucket:
+                        del bucket[original]
+                        cache_dirty = True
+            if cache_dirty:
+                cache["gemini"] = bucket
+                save_translation_cache(cache_path, cache)
+        else:
+            print("Todas las líneas ya estaban traducidas en la caché, no se llamó a la API.")
+
+        return {t: bucket.get(t, "") for t in texts}, failed
+    except Exception as e:
+        _raise_gemini_error(e)
 
 
 # ---------------------------------------------------------------------------
@@ -482,3 +658,48 @@ def cut_single_clip(video_path, start, end, output_path, media="both",
 
     else:
         raise ValueError(f"media inválido: {media!r} (usa 'video', 'audio' o 'both')")
+
+
+def _test_empty_gemini_translation_not_cached() -> None:
+    """Traducción vacía no debe quedar en caché; un reintento válido sí."""
+    import tempfile
+    from unittest.mock import MagicMock, patch
+
+    sample_text = "Hello world!"
+    with tempfile.TemporaryDirectory() as tmp:
+        cache_path = os.path.join(tmp, "translations_cache.json")
+        save_translation_cache(cache_path, {"deepl": {}, "gemini": {sample_text: ""}})
+
+        mock_client = MagicMock()
+        empty_response = MagicMock(text="")
+        good_response = MagicMock(text="Hola mundo!")
+        mock_genai = MagicMock()
+        mock_genai.Client.return_value = mock_client
+
+        import types
+        mock_google = types.ModuleType("google")
+        mock_google.genai = mock_genai
+
+        with patch.dict(sys.modules, {"google": mock_google, "google.genai": mock_genai}):
+            mock_client.models.generate_content.return_value = empty_response
+            results, failed = translate_texts_gemini(
+                [sample_text], "fake-key", "ES", cache_path
+            )
+            assert sample_text in failed, failed
+            assert results[sample_text] == ""
+            cache = load_translation_cache(cache_path)
+            assert sample_text not in cache["gemini"], cache["gemini"]
+
+            mock_client.models.generate_content.return_value = good_response
+            results, failed = translate_texts_gemini(
+                [sample_text], "fake-key", "ES", cache_path
+            )
+            assert failed == [], failed
+            assert results[sample_text] == "Hola mundo!"
+            cache = load_translation_cache(cache_path)
+            assert cache["gemini"][sample_text] == "Hola mundo!"
+
+
+if __name__ == "__main__":
+    _test_empty_gemini_translation_not_cached()
+    print("OK: empty Gemini translations are not cached")

@@ -169,7 +169,9 @@ def main():
 
         cache_path = args.translation_cache or f"{args.series_name}_translations_cache.json"
         all_texts = [text for _, text, _, _, _, _ in tsv_rows]
-        translations = translate_texts(all_texts, api_key, args.target_lang, cache_path)
+        translations, failed = translate_texts(all_texts, api_key, args.target_lang, cache_path)
+        if failed:
+            print(f"\n[AVISO] {len(failed)} línea(s) sin traducir (respuesta vacía de la API).")
 
     write_anki_tsv(args.tsv_out, tsv_rows, translations)
 

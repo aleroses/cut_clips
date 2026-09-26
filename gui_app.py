@@ -39,21 +39,21 @@ import os
 import sys
 from dataclasses import replace
 
-from PySide6.QtCore import Qt, QRunnable, QThreadPool, Signal, QObject, QTimer
+from PySide6.QtCore import Qt, QRunnable, QThreadPool, Signal, QObject, QTimer, Slot
 from PySide6.QtGui import QKeyEvent, QKeySequence
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QListWidget, QListWidgetItem, QPushButton, QLabel, QDoubleSpinBox,
     QFileDialog, QMessageBox, QFrame, QSplitter, QStatusBar, QGroupBox,
     QLineEdit, QCheckBox, QDialog, QSpinBox, QAbstractSpinBox, QPlainTextEdit,
-    QProgressBar, QScrollArea,
+    QProgressBar, QScrollArea, QComboBox,
 )
 
 from core.subtitle_parser import generate_sentences, normalize_case, fix_punctuation_spacing, parse_srt_blocks
 from core.clip_engine import (
     cut_single_clip, write_anki_tsv, detect_video_title,
-    extract_episode_title, translate_texts, compute_padded_window,
-    load_translation_cache,
+    extract_episode_title, translate_texts, translate_texts_gemini, compute_padded_window,
+    load_translation_cache, lookup_cached_translation,
     sanitize_filename_component, run_batch, BatchCancelToken, MIN_DURATION,
 )
 from core.naming import (
@@ -155,8 +155,69 @@ def format_cue_range_label(cue_indices: list) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Corte en segundo plano
+# Corte y traducción en segundo plano
 # ---------------------------------------------------------------------------
+
+def _translation_failure_note(failed: list[str], total: int | None = None) -> str:
+    if total is not None and total > len(failed):
+        succeeded = total - len(failed)
+        return (
+            f"{succeeded} de {total} clip(s) traducidos; "
+            f"{len(failed)} fallaron (respuesta vacía de la API)"
+        )
+    return f"{len(failed)} clip(s) sin traducir: respuesta vacía de la API"
+
+
+class TranslationSignals(QObject):
+    finished = Signal(bool, dict, str)  # success, translations, error_message
+
+
+class TranslationTask(QRunnable):
+    """Traduce textos con DeepL o Gemini en un hilo del pool."""
+
+    def __init__(
+        self,
+        provider,
+        texts,
+        api_key,
+        cache_path,
+        task_generation: int,
+        project_path: str | None,
+        pending_count: int,
+        target_lang="ES",
+    ):
+        super().__init__()
+        self.setAutoDelete(False)
+        self.provider = provider
+        self.texts = texts
+        self.api_key = api_key
+        self.cache_path = cache_path
+        self.target_lang = target_lang
+        self.task_generation = task_generation
+        self.project_path = project_path
+        self.pending_count = pending_count
+        self.signals = TranslationSignals()
+
+    def run(self):
+        try:
+            if self.provider == "deepl":
+                translations, failed = translate_texts(
+                    self.texts, self.api_key, self.target_lang, self.cache_path
+                )
+            elif self.provider == "gemini":
+                translations, failed = translate_texts_gemini(
+                    self.texts, self.api_key, self.target_lang, self.cache_path
+                )
+            else:
+                self.signals.finished.emit(True, {}, "")
+                return
+            error_message = (
+                _translation_failure_note(failed, len(self.texts)) if failed else ""
+            )
+            self.signals.finished.emit(True, translations, error_message)
+        except Exception as e:
+            self.signals.finished.emit(False, {}, str(e))
+
 
 class CutSignals(QObject):
     finished = Signal(int, bool, str)  # segment_id, success, message
@@ -287,6 +348,7 @@ class MainWindow(QMainWindow):
     )
     _DEEPL_CONFIG_DIR = os.path.expanduser("~/.config/anki_video_tool")
     _DEEPL_KEY_FILE = os.path.join(_DEEPL_CONFIG_DIR, "deepl_key.txt")
+    _GEMINI_KEY_FILE = os.path.join(_DEEPL_CONFIG_DIR, "gemini_key.txt")
 
     def __init__(self):
         super().__init__()
@@ -326,6 +388,8 @@ class MainWindow(QMainWindow):
         self._batch_previous_status = {}
 
         self.thread_pool = QThreadPool()
+        self._translation_task_generation = 0
+        self._translation_task: TranslationTask | None = None
         self._pending_extract_options = None
         self._segment_loop_active = False
         self._seek_step_sec = 1.0
@@ -473,7 +537,7 @@ class MainWindow(QMainWindow):
             parser_options=self.parser_options,
             cue_map=self.cue_map,
             segments=self.segments,
-            translate_enabled=self.translate_checkbox.isChecked(),
+            translation_provider=self._selected_translation_provider(),
             last_clip_id=last_id,
             root_dir=self._project_root_dir,
             padding_start=self.padding_start,
@@ -614,7 +678,7 @@ class MainWindow(QMainWindow):
         self.segments = state.segments
         self.reference_alignment = state.reference_alignment
         self.next_id = state.next_id
-        self.translate_checkbox.setChecked(state.translate_enabled)
+        self._set_translation_provider(state.translation_provider)
         self.series_name_edit.setText(state.series_name)
         self.padding_start_spin.setValue(state.padding_start)
         self.padding_end_spin.setValue(state.padding_end)
@@ -1192,25 +1256,36 @@ class MainWindow(QMainWindow):
 
         left_layout.addWidget(generate_group)
 
-        # --- Traducción opcional (DeepL) ---
+        # --- Traducción opcional ---
         translate_group = QGroupBox("Traducción (opcional)")
         translate_layout = QVBoxLayout(translate_group)
 
-        self.translate_checkbox = QCheckBox("Traducir con DeepL al exportar el TSV")
-        translate_layout.addWidget(self.translate_checkbox)
+        provider_row = QHBoxLayout()
+        provider_row.addWidget(QLabel("Proveedor:"))
+        self.translation_provider_combo = QComboBox()
+        self.translation_provider_combo.addItem("Ninguna", "none")
+        self.translation_provider_combo.addItem("DeepL", "deepl")
+        self.translation_provider_combo.addItem("Gemini (Google AI Studio)", "gemini")
+        self.translation_provider_combo.currentIndexChanged.connect(
+            self._on_translation_provider_changed
+        )
+        provider_row.addWidget(self.translation_provider_combo, stretch=1)
+        translate_layout.addLayout(provider_row)
 
-        key_row = QHBoxLayout()
-        key_row.addWidget(QLabel("API key:"))
+        self.deepl_key_row = QWidget()
+        deepl_key_layout = QHBoxLayout(self.deepl_key_row)
+        deepl_key_layout.setContentsMargins(0, 0, 0, 0)
+        deepl_key_layout.addWidget(QLabel("API key de DeepL:"))
         self.deepl_key_edit = QLineEdit()
         self.deepl_key_edit.setEchoMode(QLineEdit.Password)
         self.deepl_key_edit.setPlaceholderText(
             "Opcional — o deja vacío y usa la variable de entorno DEEPL_API_KEY"
         )
-        key_row.addWidget(self.deepl_key_edit, stretch=1)
+        deepl_key_layout.addWidget(self.deepl_key_edit, stretch=1)
         self.remember_deepl_key_checkbox = QCheckBox("Recordar API key")
         self.remember_deepl_key_checkbox.setChecked(True)
         self.remember_deepl_key_checkbox.toggled.connect(self._on_remember_deepl_key_toggled)
-        key_row.addWidget(self.remember_deepl_key_checkbox)
+        deepl_key_layout.addWidget(self.remember_deepl_key_checkbox)
         self.deepl_key_edit.blockSignals(True)
         if os.path.isfile(self._DEEPL_KEY_FILE):
             self._load_deepl_key_from_config()
@@ -1220,8 +1295,34 @@ class MainWindow(QMainWindow):
                 self.deepl_key_edit.setText(env_key)
         self.deepl_key_edit.blockSignals(False)
         self.deepl_key_edit.textChanged.connect(self._on_deepl_key_changed)
-        translate_layout.addLayout(key_row)
+        translate_layout.addWidget(self.deepl_key_row)
 
+        self.gemini_key_row = QWidget()
+        gemini_key_layout = QHBoxLayout(self.gemini_key_row)
+        gemini_key_layout.setContentsMargins(0, 0, 0, 0)
+        gemini_key_layout.addWidget(QLabel("API key de Gemini:"))
+        self.gemini_key_edit = QLineEdit()
+        self.gemini_key_edit.setEchoMode(QLineEdit.Password)
+        self.gemini_key_edit.setPlaceholderText(
+            "Opcional — o deja vacío y usa la variable de entorno GEMINI_API_KEY"
+        )
+        gemini_key_layout.addWidget(self.gemini_key_edit, stretch=1)
+        self.remember_gemini_key_checkbox = QCheckBox("Recordar API key")
+        self.remember_gemini_key_checkbox.setChecked(True)
+        self.remember_gemini_key_checkbox.toggled.connect(self._on_remember_gemini_key_toggled)
+        gemini_key_layout.addWidget(self.remember_gemini_key_checkbox)
+        self.gemini_key_edit.blockSignals(True)
+        if os.path.isfile(self._GEMINI_KEY_FILE):
+            self._load_gemini_key_from_config()
+        else:
+            env_key = os.environ.get("GEMINI_API_KEY")
+            if env_key:
+                self.gemini_key_edit.setText(env_key)
+        self.gemini_key_edit.blockSignals(False)
+        self.gemini_key_edit.textChanged.connect(self._on_gemini_key_changed)
+        translate_layout.addWidget(self.gemini_key_row)
+
+        self._on_translation_provider_changed()
         left_layout.addWidget(translate_group)
 
         left_scroll.setWidget(left_content)
@@ -2201,6 +2302,45 @@ class MainWindow(QMainWindow):
             return
         super().keyPressEvent(event)
 
+    def _selected_translation_provider(self) -> str:
+        return self.translation_provider_combo.currentData() or "none"
+
+    def _set_translation_provider(self, provider: str) -> None:
+        provider = provider or "none"
+        idx = self.translation_provider_combo.findData(provider)
+        if idx < 0:
+            idx = 0
+        self.translation_provider_combo.blockSignals(True)
+        self.translation_provider_combo.setCurrentIndex(idx)
+        self.translation_provider_combo.blockSignals(False)
+        self._on_translation_provider_changed()
+
+    def _translation_provider_label(self, provider: str | None = None) -> str:
+        provider = provider or self._selected_translation_provider()
+        return {"deepl": "DeepL", "gemini": "Gemini"}.get(provider, provider)
+
+    def _translation_api_key(self, provider: str | None = None) -> str:
+        provider = provider or self._selected_translation_provider()
+        if provider == "deepl":
+            return self.deepl_key_edit.text().strip() or os.environ.get("DEEPL_API_KEY", "")
+        if provider == "gemini":
+            return self.gemini_key_edit.text().strip() or os.environ.get("GEMINI_API_KEY", "")
+        return ""
+
+    def _on_translation_provider_changed(self) -> None:
+        provider = self._selected_translation_provider()
+        self.deepl_key_row.setVisible(provider == "deepl")
+        self.gemini_key_row.setVisible(provider == "gemini")
+
+    def _translate_texts_for_provider(self, texts, cache_path) -> tuple[dict[str, str], list[str]]:
+        provider = self._selected_translation_provider()
+        api_key = self._translation_api_key(provider)
+        if provider == "deepl":
+            return translate_texts(texts, api_key, "ES", cache_path)
+        if provider == "gemini":
+            return translate_texts_gemini(texts, api_key, "ES", cache_path)
+        return {}, []
+
     def _load_deepl_key_from_config(self) -> None:
         if not os.path.isfile(self._DEEPL_KEY_FILE):
             return
@@ -2237,11 +2377,48 @@ class MainWindow(QMainWindow):
         else:
             self._clear_deepl_key_config()
 
+    def _load_gemini_key_from_config(self) -> None:
+        if not os.path.isfile(self._GEMINI_KEY_FILE):
+            return
+        with open(self._GEMINI_KEY_FILE, encoding="utf-8") as f:
+            key = f.read().strip()
+        if key:
+            self.gemini_key_edit.setText(key)
+
+    def _clear_gemini_key_config(self) -> None:
+        try:
+            os.remove(self._GEMINI_KEY_FILE)
+        except FileNotFoundError:
+            pass
+
+    def _save_gemini_key_to_config(self) -> None:
+        if not self.remember_gemini_key_checkbox.isChecked():
+            self._clear_gemini_key_config()
+            return
+        key = self.gemini_key_edit.text().strip()
+        if not key:
+            self._clear_gemini_key_config()
+            return
+        os.makedirs(self._DEEPL_CONFIG_DIR, exist_ok=True)
+        with open(self._GEMINI_KEY_FILE, "w", encoding="utf-8") as f:
+            f.write(key)
+
+    def _on_gemini_key_changed(self) -> None:
+        if self.remember_gemini_key_checkbox.isChecked():
+            self._save_gemini_key_to_config()
+
+    def _on_remember_gemini_key_toggled(self, checked: bool) -> None:
+        if checked:
+            self._save_gemini_key_to_config()
+        else:
+            self._clear_gemini_key_config()
+
     def closeEvent(self, event):
         if not self._prompt_save_before_close():
             event.ignore()
             return
         self._save_deepl_key_to_config()
+        self._save_gemini_key_to_config()
         self._shutdown_mpv_player()
         super().closeEvent(event)
 
@@ -2697,10 +2874,14 @@ class MainWindow(QMainWindow):
             ))
         return rows
 
-    def _auto_export_tsv(self) -> tuple[str | None, int, str | None]:
+    def _auto_export_tsv(
+        self, background_translation: bool = True
+    ) -> tuple[str | None, int, str | None]:
         """Escribe TSV junto al .anki-project.json.
 
         Devuelve (tsv_basename, nuevas_traducciones, aviso_traducción).
+        Si hay textos pendientes y API key, lanza TranslationTask en background
+        (salvo background_translation=False, p. ej. tras completar una traducción).
         """
         if not self._project_path:
             return None, 0, None
@@ -2714,10 +2895,11 @@ class MainWindow(QMainWindow):
         basename = tsv_filename(series_name, file_episode_label, title)
         tsv_path = os.path.join(os.path.dirname(self._project_path), basename)
 
-        new_translation_count = 0
         translation_note: str | None = None
+        provider = self._selected_translation_provider()
+        pending_unique: list[str] = []
 
-        if self.translate_checkbox.isChecked():
+        if provider != "none":
             pending_texts = [
                 seg["text"]
                 for seg in self.segments
@@ -2725,32 +2907,6 @@ class MainWindow(QMainWindow):
                 and not seg.get("translation")
             ]
             pending_unique = list(dict.fromkeys(pending_texts))
-
-            if pending_unique:
-                api_key = self.deepl_key_edit.text().strip()
-                if api_key:
-                    cache_path = self._translation_cache_path()
-                    cache_before = load_translation_cache(cache_path)
-                    try:
-                        api_results = translate_texts(
-                            pending_unique, api_key, "ES", cache_path
-                        )
-                        new_translation_count = sum(
-                            1 for t in pending_unique
-                            if t not in cache_before and api_results.get(t)
-                        )
-                        for seg in self.segments:
-                            if seg.get("status") in ("exported", "outdated"):
-                                if seg["text"] in api_results:
-                                    seg["translation"] = api_results[seg["text"]]
-                        if new_translation_count:
-                            self._mark_project_modified()
-                    except Exception as e:
-                        translation_note = (
-                            f"{len(pending_unique)} clip(s) sin traducir: {e}"
-                        )
-
-        tsv_rows = self._build_tsv_rows()
 
         translations: dict[str, str] = {}
         rows_for_write = []
@@ -2760,11 +2916,13 @@ class MainWindow(QMainWindow):
             if seg_translation:
                 translations[text] = seg_translation
 
-        if self.translate_checkbox.isChecked():
+        if provider != "none":
             cache = load_translation_cache(self._translation_cache_path())
             for _, text, *_ in rows_for_write:
-                if not translations.get(text) and text in cache:
-                    translations[text] = cache[text]
+                if not translations.get(text):
+                    cached = lookup_cached_translation(cache, provider, text)
+                    if cached:
+                        translations[text] = cached
 
         skip_msg = self._should_skip_tsv_overwrite(tsv_path, len(rows_for_write))
         if skip_msg:
@@ -2772,9 +2930,104 @@ class MainWindow(QMainWindow):
             return None, 0, translation_note
 
         write_anki_tsv(tsv_path, rows_for_write, translations)
-        return basename, new_translation_count, translation_note
+
+        if (
+            background_translation
+            and provider != "none"
+            and pending_unique
+            and self._translation_api_key(provider)
+        ):
+            self._start_background_translation(
+                provider, pending_unique, len(pending_unique)
+            )
+            translation_note = (
+                f"Traduciendo {len(pending_unique)} clip(s) en segundo plano..."
+            )
+            self.statusBar().showMessage(translation_note)
+
+        return basename, 0, translation_note
+
+    def _start_background_translation(
+        self, provider: str, pending_unique: list[str], pending_count: int
+    ) -> None:
+        api_key = self._translation_api_key(provider)
+        cache_path = self._translation_cache_path()
+        self._translation_task_generation += 1
+        task_generation = self._translation_task_generation
+        project_path = self._project_path
+
+        if self._translation_task is not None:
+            self._release_translation_task(self._translation_task)
+
+        task = TranslationTask(
+            provider,
+            pending_unique,
+            api_key,
+            cache_path,
+            task_generation,
+            project_path,
+            pending_count,
+        )
+        self._translation_task = task
+        task.signals.finished.connect(self._on_translation_task_finished)
+        self.thread_pool.start(task)
+
+    def _release_translation_task(self, task: TranslationTask) -> None:
+        try:
+            task.signals.finished.disconnect(self._on_translation_task_finished)
+        except (RuntimeError, TypeError):
+            pass
+        if self._translation_task is task:
+            self._translation_task = None
+
+    @Slot(bool, dict, str)
+    def _on_translation_task_finished(
+        self,
+        success: bool,
+        translations: dict,
+        error_message: str,
+    ) -> None:
+        task = self._translation_task
+        if task is None:
+            return
+        task_generation = task.task_generation
+        project_path = task.project_path
+        pending_count = task.pending_count
+        self._release_translation_task(task)
+
+        if project_path != self._project_path:
+            return
+        if task_generation != self._translation_task_generation:
+            return
+
+        if not success:
+            detail = error_message or "Error desconocido."
+            self.statusBar().showMessage(
+                f"{pending_count} clip(s) sin traducir: {detail}"
+            )
+            return
+
+        updated = False
+        for seg in self.segments:
+            if seg.get("status") in ("exported", "outdated"):
+                translation = translations.get(seg["text"], "")
+                if translation:
+                    seg["translation"] = translation
+                    updated = True
+        if updated:
+            self._mark_project_modified()
+
+        self._auto_export_tsv(background_translation=False)
+
+        if error_message:
+            self.statusBar().showMessage(
+                f"Traducción completada, TSV actualizado. {error_message}"
+            )
+        else:
+            self.statusBar().showMessage("Traducción completada, TSV actualizado")
 
     def export_tsv(self):
+        # Exportación manual: traducción síncrona (el usuario espera el resultado).
         if not self.segments:
             QMessageBox.information(self, "Nada que exportar", "No hay oraciones cargadas.")
             return
@@ -2809,12 +3062,14 @@ class MainWindow(QMainWindow):
         used_fallback_cache = self._project_path is None
 
         translations = {}
-        if self.translate_checkbox.isChecked():
-            api_key = self.deepl_key_edit.text().strip()
+        provider = self._selected_translation_provider()
+        if provider != "none":
+            api_key = self._translation_api_key(provider)
+            provider_label = self._translation_provider_label(provider)
             if not api_key:
                 QMessageBox.warning(
                     self, "Falta la API key",
-                    "Marcaste traducir con DeepL pero no ingresaste una API key.\n"
+                    f"Marcaste traducir con {provider_label} pero no ingresaste una API key.\n"
                     "El TSV se exportará sin traducción."
                 )
             else:
@@ -2823,11 +3078,19 @@ class MainWindow(QMainWindow):
                 )
                 all_texts = [row[1] for row in tsv_rows]
                 try:
-                    translations = translate_texts(all_texts, api_key, "ES", cache_path)
+                    translations, failed = self._translate_texts_for_provider(
+                        all_texts, cache_path
+                    )
                     for seg in self.segments:
                         if seg.get("status") in ("exported", "outdated"):
                             seg["translation"] = translations.get(seg["text"], "")
                     self._mark_project_modified()
+                    if failed:
+                        QMessageBox.warning(
+                            self,
+                            "Traducción parcial",
+                            _translation_failure_note(failed),
+                        )
                 except Exception as e:
                     QMessageBox.critical(self, "Error de traducción", str(e))
 
@@ -2839,7 +3102,7 @@ class MainWindow(QMainWindow):
 
         write_anki_tsv(path, rows_for_write, translations)
         success_msg = f"TSV guardado en:\n{path}"
-        if used_fallback_cache and self.translate_checkbox.isChecked() and translations:
+        if used_fallback_cache and provider != "none" and translations:
             success_msg += (
                 "\n\nLas traducciones se guardaron en la caché junto al TSV. "
                 "Guarda el proyecto para que persistan correctamente en el directorio del proyecto."

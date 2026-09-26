@@ -50,7 +50,7 @@ class SubtitleCue:
 class TranslationConfig:
     """Configuración de traducción (sin almacenar API keys)."""
 
-    provider: str = "none"  # none, deepl, openai, ...
+    provider: str = "none"  # none, deepl, gemini
     target_lang: str = "ES"
     cache_path: str = ""
 

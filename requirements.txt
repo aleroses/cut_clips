@@ -1,8 +1,9 @@
 # Dependencias base del pipeline CLI (corte + parseo)
 # FFmpeg y ffprobe deben estar instalados en el sistema.
 
-# Traducción automática (opcional; solo con --translate o checkbox en GUI)
+# Traducción automática (opcional; solo con --translate o combo en GUI)
 deepl
+google-genai
 
 # Interfaz gráfica (opcional; solo gui_app.py)
 PySide6

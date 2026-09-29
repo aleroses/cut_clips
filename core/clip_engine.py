@@ -21,6 +21,7 @@ import os
 import re
 import subprocess
 import sys
+import warnings
 
 from core.naming import clip_audio_filename, clip_video_filename
 
@@ -198,12 +199,21 @@ def _gemini_response_text(response) -> str:
     return getattr(response, "text", "") or ""
 
 
+def _gemini_generate_content(client, *, model: str, contents: str):
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"Direct use of automatic function calling.*",
+        )
+        return client.models.generate_content(model=model, contents=contents)
+
+
 def _translate_gemini_batch(client, texts: list[str], target_lang: str) -> list[str]:
     prompt = (
         f"{_gemini_translation_instructions(target_lang)}\n\n"
         f"{_format_numbered_texts(texts)}"
     )
-    response = client.models.generate_content(model=_GEMINI_MODEL, contents=prompt)
+    response = _gemini_generate_content(client, model=_GEMINI_MODEL, contents=prompt)
     response_text = _gemini_response_text(response)
     return _parse_gemini_numbered_response(response_text, len(texts))
 
@@ -213,7 +223,7 @@ def _translate_gemini_one_by_one(client, texts: list[str], target_lang: str) -> 
     instructions = _gemini_translation_instructions(target_lang)
     for text in texts:
         prompt = f"{instructions}\n\nTraduce esta única línea:\n{text}"
-        response = client.models.generate_content(model=_GEMINI_MODEL, contents=prompt)
+        response = _gemini_generate_content(client, model=_GEMINI_MODEL, contents=prompt)
         response_text = _gemini_response_text(response)
         translations.append(response_text.strip())
     return translations

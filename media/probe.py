@@ -197,7 +197,7 @@ def extract_subtitle(video_path, stream_index, output_path, exit_on_error=True):
     try:
         result = subprocess.run(
             ["ffmpeg", "-y", "-i", video_path, "-map", f"0:{stream_index}", output_path],
-            capture_output=True, text=True, timeout=300,
+            capture_output=True, text=True, timeout=900,
         )
     except FileNotFoundError:
         if exit_on_error:

@@ -37,6 +37,8 @@ Notas de diseño:
 
 import os
 import sys
+import time
+import traceback
 from dataclasses import replace
 
 from PySide6.QtCore import Qt, QRunnable, QThreadPool, Signal, QObject, QTimer, Slot
@@ -46,7 +48,7 @@ from PySide6.QtWidgets import (
     QListWidget, QListWidgetItem, QPushButton, QLabel, QDoubleSpinBox,
     QFileDialog, QMessageBox, QFrame, QSplitter, QStatusBar, QGroupBox,
     QLineEdit, QCheckBox, QDialog, QSpinBox, QAbstractSpinBox, QPlainTextEdit,
-    QProgressBar, QScrollArea, QComboBox,
+    QProgressBar, QProgressDialog, QScrollArea, QComboBox,
 )
 
 from core.subtitle_parser import generate_sentences, normalize_case, fix_punctuation_spacing, parse_srt_blocks
@@ -85,6 +87,14 @@ try:
     import mpv
 except (ImportError, OSError):
     mpv = None
+
+
+def _safe_task_emit(emit_fn):
+    """Evita traceback si la UI ya fue destruida al emitir desde un QRunnable."""
+    try:
+        emit_fn()
+    except RuntimeError:
+        pass
 
 
 def _ensure_mpv_numeric_locale():
@@ -249,7 +259,9 @@ class BatchGenerateTask(QRunnable):
     def run(self):
         try:
             if self.cancel_token.cancelled:
-                self.signals.finished.emit(False, "Cancelado por el usuario.", [])
+                _safe_task_emit(
+                    lambda: self.signals.finished.emit(False, "Cancelado por el usuario.", [])
+                )
                 return
 
             _vg, _ve, _ag, _ae, err = run_batch(
@@ -279,15 +291,17 @@ class BatchGenerateTask(QRunnable):
                     completed.append(job["index"])
 
             if self.cancel_token.cancelled:
-                self.signals.finished.emit(
-                    False, "Cancelado por el usuario.", completed
+                _safe_task_emit(
+                    lambda: self.signals.finished.emit(
+                        False, "Cancelado por el usuario.", completed
+                    )
                 )
             elif err:
-                self.signals.finished.emit(False, err, completed)
+                _safe_task_emit(lambda: self.signals.finished.emit(False, err, completed))
             else:
-                self.signals.finished.emit(True, "", completed)
+                _safe_task_emit(lambda: self.signals.finished.emit(True, "", completed))
         except Exception as e:
-            self.signals.finished.emit(False, str(e), [])
+            _safe_task_emit(lambda: self.signals.finished.emit(False, str(e), []))
 
 
 class CutTask(QRunnable):
@@ -310,9 +324,11 @@ class CutTask(QRunnable):
                 self.video_path, self.start, self.end, self.output_path,
                 media=self.media, audio_track=self.audio_track, video_track=self.video_track,
             )
-            self.signals.finished.emit(self.segment_id, ok, err if not ok else "")
+            _safe_task_emit(
+                lambda: self.signals.finished.emit(self.segment_id, ok, err if not ok else "")
+            )
         except Exception as e:
-            self.signals.finished.emit(self.segment_id, False, str(e))
+            _safe_task_emit(lambda: self.signals.finished.emit(self.segment_id, False, str(e)))
 
 
 class ExtractSubtitleTask(QRunnable):
@@ -328,13 +344,15 @@ class ExtractSubtitleTask(QRunnable):
             extract_subtitle(
                 self.video_path, self.stream_index, self.output_path, exit_on_error=False
             )
-            self.signals.finished.emit(0, True, self.output_path)
+            _safe_task_emit(lambda: self.signals.finished.emit(0, True, self.output_path))
         except FileNotFoundError:
-            self.signals.finished.emit(0, False, "FFmpeg no está instalado.")
+            _safe_task_emit(
+                lambda: self.signals.finished.emit(0, False, "FFmpeg no está instalado.")
+            )
         except RuntimeError as e:
-            self.signals.finished.emit(0, False, str(e))
+            _safe_task_emit(lambda: self.signals.finished.emit(0, False, str(e)))
         except Exception as e:
-            self.signals.finished.emit(0, False, str(e))
+            _safe_task_emit(lambda: self.signals.finished.emit(0, False, str(e)))
 
 
 # ---------------------------------------------------------------------------
@@ -391,6 +409,10 @@ class MainWindow(QMainWindow):
         self._translation_task_generation = 0
         self._translation_task: TranslationTask | None = None
         self._pending_extract_options = None
+        self._extract_started_monotonic: float | None = None
+        self._extract_elapsed_timer = QTimer(self)
+        self._extract_elapsed_timer.setInterval(1000)
+        self._extract_elapsed_timer.timeout.connect(self._on_extract_elapsed_tick)
         self._segment_loop_active = False
         self._seek_step_sec = 1.0
         self._text_edit_undo_pending = False
@@ -741,78 +763,167 @@ class MainWindow(QMainWindow):
         try:
             self.probe_data = probe(path, exit_on_error=False)
         except (FileNotFoundError, RuntimeError) as e:
-            if show_media_dialog:
-                QMessageBox.critical(self, "Error al analizar el vídeo", str(e))
+            QMessageBox.critical(self, "Error al analizar el vídeo", str(e))
             return False
 
-        if show_media_dialog:
-            dialog = MediaInfoDialog(path, self.probe_data, self, language=self.subtitle_language)
-            if dialog.exec() != MediaInfoDialog.Accepted:
-                return False
-            tracks = dialog.selection()
-            self.audio_track = tracks.audio_track
-            self.video_track = tracks.video_track
-            self.subtitle_track_index = tracks.subtitle_track_index
-            self.subtitle_language = tracks.subtitle_language
-            self.parser_options.language = tracks.subtitle_language
-        elif self.media_summary is None:
+        try:
+            if show_media_dialog:
+                dialog = MediaInfoDialog(path, self.probe_data, self, language=self.subtitle_language)
+                if dialog.exec() != MediaInfoDialog.Accepted:
+                    return False
+                tracks = dialog.selection()
+                self.audio_track = tracks.audio_track
+                self.video_track = tracks.video_track
+                self.subtitle_track_index = tracks.subtitle_track_index
+                self.subtitle_language = tracks.subtitle_language
+                self.parser_options.language = tracks.subtitle_language
+            elif self.media_summary is None:
+                self.media_summary = summarize_media(self.probe_data)
+
+            self.video_path = path
             self.media_summary = summarize_media(self.probe_data)
 
-        self.video_path = path
-        self.media_summary = summarize_media(self.probe_data)
+            raw_title = self.media_summary["format"].get("title") or detect_video_title(path)
+            if not self.episode_title:
+                self.episode_title = extract_episode_title(raw_title) or ""
+            if not self._series_name:
+                self._series_name = guess_series_name(path)
+            if self._season == 1 and self._episode_num == 1:
+                self._season, self._episode_num = parse_season_episode(raw_title)
 
-        raw_title = self.media_summary["format"].get("title") or detect_video_title(path)
-        if not self.episode_title:
-            self.episode_title = extract_episode_title(raw_title) or ""
-        if not self._series_name:
-            self._series_name = guess_series_name(path)
-        if self._season == 1 and self._episode_num == 1:
-            self._season, self._episode_num = parse_season_episode(raw_title)
-
-        if mpv is not None:
-            if not self._use_opengl_embed:
-                self._ensure_native_video_window()
-            self._stop_mpv_playback()
-            self._load_media_in_player(path)
-        return True
+            if mpv is not None:
+                if not self._use_opengl_embed:
+                    self._ensure_native_video_window()
+                self._stop_mpv_playback()
+                self._load_media_in_player(path)
+            return True
+        except Exception:
+            traceback.print_exc()
+            raise
 
     def _finish_video_open(self, path: str) -> bool:
         """Carga vídeo, subtítulos automáticos y sincroniza la GUI."""
         path = os.path.abspath(path)
-        if not self._load_video_from_path(path, show_media_dialog=False):
-            return False
-        self._try_load_subtitles_after_video(path)
-        self._sync_playback_ui_after_load()
-        return True
+        print(f"[open_video] _finish_video_open: entrada path={path!r}", flush=True)
+        try:
+            load_ok = self._load_video_from_path(path, show_media_dialog=False)
+            print(f"[open_video] _load_video_from_path -> {load_ok!r}", flush=True)
+            if not load_ok:
+                print("[open_video] _finish_video_open: salida False", flush=True)
+                return False
+            self._try_load_subtitles_after_video(path)
+            self._sync_playback_ui_after_load()
+            print("[open_video] _finish_video_open: salida True", flush=True)
+            return True
+        except Exception:
+            traceback.print_exc()
+            raise
+
+    _EXTRACT_PROGRESS_HINT = (
+        "Extrayendo subtítulos del vídeo, esto puede tardar varios minutos "
+        "en archivos grandes (hasta 15 min)…"
+    )
+    _EXTRACT_STATUS_SHORT = "Extrayendo subtítulos del vídeo…"
+    _EXTRACT_STATUS_LONG_PREFIX = (
+        "Extrayendo subtítulos del vídeo… sigue en curso"
+    )
+
+    def _show_subtitle_extract_progress(self):
+        self._extract_progress_label.setVisible(True)
+        self._extract_progress_bar.setVisible(True)
+        self._extract_started_monotonic = time.monotonic()
+        self.statusBar().showMessage(self._EXTRACT_STATUS_SHORT)
+        self._extract_elapsed_timer.start()
+
+    def _on_extract_elapsed_tick(self):
+        if self._extract_started_monotonic is None:
+            return
+        elapsed = int(time.monotonic() - self._extract_started_monotonic)
+        if elapsed >= 30:
+            msg = f"{self._EXTRACT_STATUS_LONG_PREFIX} ({elapsed} s)"
+            self.statusBar().showMessage(msg)
+            self._extract_progress_label.setText(
+                f"{self._EXTRACT_PROGRESS_HINT} ({elapsed} s transcurridos)"
+            )
+
+    def _hide_subtitle_extract_progress(self):
+        self._extract_elapsed_timer.stop()
+        self._extract_started_monotonic = None
+        self._extract_progress_label.setVisible(False)
+        self._extract_progress_bar.setVisible(False)
+        self._extract_progress_label.setText(self._EXTRACT_PROGRESS_HINT)
+
+    def _launch_extract_subtitle_task(self, task: ExtractSubtitleTask):
+        self._show_subtitle_extract_progress()
+        task.signals.finished.connect(self._on_extract_finished)
+        self.thread_pool.start(task)
 
     def _try_load_subtitles_after_video(self, video_path: str):
         """Carga subtítulos automáticamente: sidecar .srt o pista embebida textual."""
         video_path = os.path.abspath(video_path)
+        print(
+            f"[open_video] _try_load_subtitles_after_video: "
+            f"subtitle_track_index={self.subtitle_track_index!r}",
+            flush=True,
+        )
         sidecar = find_sidecar_subtitle(video_path)
         if sidecar:
-            if self._load_subtitles_from_file(
-                sidecar,
-                replace(self.parser_options, language=self.subtitle_language),
-                source=f"Sidecar {os.path.basename(sidecar)}",
-                skip_confirm=True,
-            ):
-                return
+            print(f"[open_video] Sidecar encontrado: {sidecar}", flush=True)
+        else:
+            print("[open_video] Sin sidecar", flush=True)
+        try:
+            if sidecar:
+                if self._load_subtitles_from_file(
+                    sidecar,
+                    replace(self.parser_options, language=self.subtitle_language),
+                    source=f"Sidecar {os.path.basename(sidecar)}",
+                    skip_confirm=True,
+                ):
+                    return
+        except Exception:
+            traceback.print_exc()
+            raise
 
+        extract_launched = False
         if self.subtitle_track_index is not None:
             subtitles = (self.media_summary or {}).get("subtitles", [])
             stream = find_subtitle_stream(subtitles, self.subtitle_track_index)
-            if stream and stream.get("is_text") and not stream.get("is_image"):
-                out_path = subtitle_extract_path(video_path, self.subtitle_track_index)
-                self._pending_extract_options = replace(
-                    self.parser_options, language=self.subtitle_language
+            if stream:
+                print(
+                    "[open_video] find_subtitle_stream: "
+                    f"codec={stream.get('codec_name')!r}, "
+                    f"is_text={stream.get('is_text')!r}, "
+                    f"is_image={stream.get('is_image')!r}",
+                    flush=True,
                 )
-                self.statusBar().showMessage("Extrayendo subtítulos del vídeo…")
-                task = ExtractSubtitleTask(
-                    video_path, self.subtitle_track_index, out_path
+            else:
+                print(
+                    f"[open_video] find_subtitle_stream: sin pista para "
+                    f"index={self.subtitle_track_index!r}",
+                    flush=True,
                 )
-                task.signals.finished.connect(self._on_extract_finished)
-                self.thread_pool.start(task)
-                return
+            try:
+                if stream and stream.get("is_text") and not stream.get("is_image"):
+                    out_path = subtitle_extract_path(video_path, self.subtitle_track_index)
+                    self._pending_extract_options = replace(
+                        self.parser_options, language=self.subtitle_language
+                    )
+                    task = ExtractSubtitleTask(
+                        video_path, self.subtitle_track_index, out_path
+                    )
+                    self._launch_extract_subtitle_task(task)
+                    extract_launched = True
+                    print(
+                        f"[open_video] ExtractSubtitleTask lanzado, out_path={out_path!r}",
+                        flush=True,
+                    )
+                    return
+            except Exception:
+                traceback.print_exc()
+                raise
+
+        if not extract_launched:
+            print("[open_video] ExtractSubtitleTask NO lanzado", flush=True)
 
         msg = self.statusBar().currentMessage()
         hint = "Sin subtítulos auto: Archivo → Abrir subtítulo (.srt) o Extraer subtítulos."
@@ -1111,23 +1222,18 @@ class MainWindow(QMainWindow):
         row1.addWidget(self.stop_btn)
         playback_layout.addLayout(row1)
 
-        row2 = QHBoxLayout()
-        goto_start = QPushButton("⏮ Inicio clip")
-        goto_start.clicked.connect(self.seek_to_segment_start)
-        goto_end = QPushButton("⏭ Final clip")
-        goto_end.clicked.connect(self.seek_to_segment_end)
-        seek_back = QPushButton("◀ −1 s")
-        seek_back.clicked.connect(lambda: self.seek_relative(-self._seek_step_sec))
-        seek_fwd = QPushButton("+1 s ▶")
-        seek_fwd.clicked.connect(lambda: self.seek_relative(self._seek_step_sec))
-        row2.addWidget(goto_start)
-        row2.addWidget(goto_end)
-        row2.addWidget(seek_back)
-        row2.addWidget(seek_fwd)
-        playback_layout.addLayout(row2)
-
         self.position_label = QLabel("Posición: —")
         playback_layout.addWidget(self.position_label)
+
+        self._extract_progress_label = QLabel(self._EXTRACT_PROGRESS_HINT)
+        self._extract_progress_label.setWordWrap(True)
+        self._extract_progress_label.setVisible(False)
+        playback_layout.addWidget(self._extract_progress_label)
+
+        self._extract_progress_bar = QProgressBar()
+        self._extract_progress_bar.setRange(0, 0)
+        self._extract_progress_bar.setVisible(False)
+        playback_layout.addWidget(self._extract_progress_bar)
 
         hint = QLabel(
             "Atajos: Espacio = probar/pausa  |  ←/→ = ±1 s  |  "
@@ -1145,13 +1251,6 @@ class MainWindow(QMainWindow):
         self.start_spin.setRange(0, 99999)
         self.start_spin.setSingleStep(0.1)
         time_layout.addWidget(self.start_spin)
-
-        start_minus = QPushButton("-100ms")
-        start_minus.clicked.connect(lambda: self._nudge(self.start_spin, -0.1))
-        start_plus = QPushButton("+100ms")
-        start_plus.clicked.connect(lambda: self._nudge(self.start_spin, 0.1))
-        time_layout.addWidget(start_minus)
-        time_layout.addWidget(start_plus)
         left_layout.addLayout(time_layout)
 
         end_layout = QHBoxLayout()
@@ -1165,38 +1264,40 @@ class MainWindow(QMainWindow):
         self.start_spin.valueChanged.connect(self._on_segment_bounds_changed)
         self.end_spin.valueChanged.connect(self._on_segment_bounds_changed)
 
-        end_minus = QPushButton("-100ms")
-        end_minus.clicked.connect(lambda: self._nudge(self.end_spin, -0.1))
-        end_plus = QPushButton("+100ms")
-        end_plus.clicked.connect(lambda: self._nudge(self.end_spin, 0.1))
-        end_layout.addWidget(end_minus)
-        end_layout.addWidget(end_plus)
         left_layout.addLayout(end_layout)
-
-        left_layout.addWidget(QLabel("Texto:"))
-        self.segment_text_edit = QPlainTextEdit()
-        self.segment_text_edit.setPlaceholderText("Texto de la oración seleccionada…")
-        self.segment_text_edit.setMaximumHeight(80)
-        self.segment_text_edit.textChanged.connect(self._on_segment_text_changed)
-        left_layout.addWidget(self.segment_text_edit)
-
-        self.load_reference_btn = QPushButton("Cargar texto de referencia externo…")
-        self.load_reference_btn.clicked.connect(self.load_external_reference_text)
-        left_layout.addWidget(self.load_reference_btn)
-
-        self.reference_label = QLabel("Texto de referencia:")
-        self.reference_text_display = QPlainTextEdit()
-        self.reference_text_display.setReadOnly(True)
-        self.reference_text_display.setMaximumHeight(100)
-        self.reference_text_display.setPlaceholderText("(sin texto de referencia cargado)")
-        left_layout.addWidget(self.reference_label)
-        left_layout.addWidget(self.reference_text_display)
-        self.reference_label.setVisible(False)
-        self.reference_text_display.setVisible(False)
 
         apply_btn = QPushButton("Aplicar tiempos a la línea seleccionada")
         apply_btn.clicked.connect(self.apply_times_to_selected)
         left_layout.addWidget(apply_btn)
+
+        text_group = QGroupBox("Texto y referencia")
+        text_group_layout = QVBoxLayout(text_group)
+        text_group_layout.setSpacing(4)
+        text_group_layout.setContentsMargins(8, 6, 8, 6)
+        text_group_layout.addWidget(QLabel("Texto:"))
+        self.segment_text_edit = QPlainTextEdit()
+        self.segment_text_edit.setPlaceholderText("Texto de la oración seleccionada…")
+        self.segment_text_edit.setMaximumHeight(52)
+        self.segment_text_edit.textChanged.connect(self._on_segment_text_changed)
+        text_group_layout.addWidget(self.segment_text_edit)
+
+        reference_header = QHBoxLayout()
+        self.reference_label = QLabel("Texto de referencia:")
+        reference_header.addWidget(self.reference_label)
+        reference_header.addStretch()
+        self.load_reference_btn = QPushButton("Cargar externo…")
+        self.load_reference_btn.clicked.connect(self.load_external_reference_text)
+        reference_header.addWidget(self.load_reference_btn)
+        text_group_layout.addLayout(reference_header)
+
+        self.reference_text_display = QPlainTextEdit()
+        self.reference_text_display.setReadOnly(True)
+        self.reference_text_display.setMaximumHeight(52)
+        self.reference_text_display.setPlaceholderText("(sin texto de referencia cargado)")
+        text_group_layout.addWidget(self.reference_text_display)
+        self.reference_label.setVisible(False)
+        self.reference_text_display.setVisible(False)
+        left_layout.addWidget(text_group)
 
         generate_group = QGroupBox("Generación (FFmpeg — crea archivos)")
         generate_layout = QVBoxLayout(generate_group)
@@ -1217,6 +1318,10 @@ class MainWindow(QMainWindow):
         series_row.addWidget(self.series_name_edit)
         generate_layout.addLayout(series_row)
 
+        padding_group = QGroupBox("Padding avanzado (opcional)")
+        padding_group.setCheckable(True)
+        padding_group.setChecked(False)
+        padding_group_layout = QVBoxLayout(padding_group)
         padding_row = QHBoxLayout()
         padding_row.addWidget(QLabel("Padding inicio:"))
         self.padding_start_spin = QDoubleSpinBox()
@@ -1232,10 +1337,10 @@ class MainWindow(QMainWindow):
         self.padding_end_spin.setSingleStep(0.05)
         self.padding_end_spin.valueChanged.connect(self._on_padding_changed)
         padding_row.addWidget(self.padding_end_spin)
-        generate_layout.addLayout(padding_row)
+        padding_group_layout.addLayout(padding_row)
+        generate_layout.addWidget(padding_group)
 
         self.generate_btn = QPushButton("💾 Generar clip (WebM + MP3)")
-        self.generate_btn.setStyleSheet("font-weight: bold;")
         self.generate_btn.clicked.connect(self.generate_selected_clip)
         generate_layout.addWidget(self.generate_btn)
 
@@ -1325,6 +1430,10 @@ class MainWindow(QMainWindow):
         self._on_translation_provider_changed()
         left_layout.addWidget(translate_group)
 
+        for btn in left_content.findChildren(QPushButton):
+            btn.setMaximumHeight(32)
+        self.generate_btn.setStyleSheet("font-weight: bold;")
+
         left_scroll.setWidget(left_content)
         splitter.addWidget(left_scroll)
 
@@ -1401,49 +1510,53 @@ class MainWindow(QMainWindow):
         if dialog.exec() != MediaInfoDialog.Accepted:
             return
 
-        tracks = dialog.selection()
-        self.audio_track = tracks.audio_track
-        self.video_track = tracks.video_track
-        self.subtitle_track_index = tracks.subtitle_track_index
-        self.subtitle_language = tracks.subtitle_language
-        self.parser_options.language = tracks.subtitle_language
+        try:
+            tracks = dialog.selection()
+            self.audio_track = tracks.audio_track
+            self.video_track = tracks.video_track
+            self.subtitle_track_index = tracks.subtitle_track_index
+            self.subtitle_language = tracks.subtitle_language
+            self.parser_options.language = tracks.subtitle_language
 
-        self._series_name = guess_series_name(path)
-        self.series_name_edit.blockSignals(True)
-        self.series_name_edit.setText(self._series_name)
-        self.series_name_edit.blockSignals(False)
-        raw_title = summarize_media(self.probe_data)["format"].get("title") or detect_video_title(path)
-        self._season, self._episode_num = parse_season_episode(raw_title)
-        self.episode_title = extract_episode_title(raw_title) or ""
-        self._project_path = None
-        self._project_root_dir = os.path.dirname(os.path.abspath(path)) or "."
+            self._series_name = guess_series_name(path)
+            self.series_name_edit.blockSignals(True)
+            self.series_name_edit.setText(self._series_name)
+            self.series_name_edit.blockSignals(False)
+            raw_title = summarize_media(self.probe_data)["format"].get("title") or detect_video_title(path)
+            self._season, self._episode_num = parse_season_episode(raw_title)
+            self.episode_title = extract_episode_title(raw_title) or ""
+            self._project_path = None
+            self._project_root_dir = os.path.dirname(os.path.abspath(path)) or "."
 
-        self._stop_mpv_playback()
-        self.reference_alignment = None
-        self._set_reference_panel_visible(False)
-        if not self._finish_video_open(path):
-            return
+            self._stop_mpv_playback()
+            self.reference_alignment = None
+            self._set_reference_panel_visible(False)
+            if not self._finish_video_open(path):
+                return
 
-        self._reevaluate_outdated_segments()
-        self._mark_project_modified()
+            self._reevaluate_outdated_segments()
+            self._mark_project_modified()
 
-        if mpv is None:
-            QMessageBox.warning(
-                self, "python-mpv no disponible",
-                "No se pudo cargar 'mpv' (revisa que libmpv esté instalado:\n"
-                "  sudo apt install libmpv2\n"
-                "  pip install python-mpv --break-system-packages\n\n"
-                "Podrás seguir editando tiempos y cortando, pero sin previsualización."
+            if mpv is None:
+                QMessageBox.warning(
+                    self, "python-mpv no disponible",
+                    "No se pudo cargar 'mpv' (revisa que libmpv esté instalado:\n"
+                    "  sudo apt install libmpv2\n"
+                    "  pip install python-mpv --break-system-packages\n\n"
+                    "Podrás seguir editando tiempos y cortando, pero sin previsualización."
+                )
+
+            track_info = f"audio={self.audio_track}, video={self.video_track}"
+            if self.subtitle_track_index is not None:
+                track_info += f", subtítulo abs={self.subtitle_track_index}"
+            self.statusBar().showMessage(
+                f"Vídeo cargado: {os.path.basename(path)}"
+                + (f'  |  Título: "{self.episode_title}"' if self.episode_title else "")
+                + f"  |  Pistas: {track_info}"
             )
-
-        track_info = f"audio={self.audio_track}, video={self.video_track}"
-        if self.subtitle_track_index is not None:
-            track_info += f", subtítulo abs={self.subtitle_track_index}"
-        self.statusBar().showMessage(
-            f"Vídeo cargado: {os.path.basename(path)}"
-            + (f'  |  Título: "{self.episode_title}"' if self.episode_title else "")
-            + f"  |  Pistas: {track_info}"
-        )
+        except Exception:
+            traceback.print_exc()
+            raise
 
     def load_external_reference_text(self):
         if not self.cue_map:
@@ -1554,29 +1667,42 @@ class MainWindow(QMainWindow):
             return
 
         self._pending_extract_options = dialog.options()
-        self.statusBar().showMessage("Extrayendo subtítulos del vídeo…")
         task = ExtractSubtitleTask(self.video_path, self.subtitle_track_index, out_path)
-        task.signals.finished.connect(self._on_extract_finished)
-        self.thread_pool.start(task)
+        self._launch_extract_subtitle_task(task)
 
     def _on_extract_finished(self, _segment_id, success, message):
-        if not success:
-            QMessageBox.critical(
-                self, "Error al extraer subtítulos",
-                message[-800:] if message else "Error desconocido."
-            )
-            self._pending_extract_options = None
-            return
+        print(
+            f"[open_video] _on_extract_finished: success={success!r}, message={message!r}",
+            flush=True,
+        )
+        try:
+            if not success:
+                err_display = message[-800:] if message else "Error desconocido."
+                print(
+                    f"[open_video] _on_extract_finished: fallo, error={err_display!r}",
+                    flush=True,
+                )
+                QMessageBox.critical(
+                    self, "Error al extraer subtítulos",
+                    err_display,
+                )
+                self._pending_extract_options = None
+                return
 
-        srt_path = message
-        options = self._pending_extract_options
-        self._pending_extract_options = None
-        if self._load_subtitles_from_file(
-            srt_path, options,
-            source=f"Pista embebida abs={self.subtitle_track_index}",
-            skip_confirm=True,
-        ):
-            self._sync_playback_ui_after_load()
+            srt_path = message
+            options = self._pending_extract_options
+            self._pending_extract_options = None
+            if self._load_subtitles_from_file(
+                srt_path, options,
+                source=f"Pista embebida abs={self.subtitle_track_index}",
+                skip_confirm=True,
+            ):
+                self._sync_playback_ui_after_load()
+        except Exception:
+            traceback.print_exc()
+            raise
+        finally:
+            self._hide_subtitle_extract_progress()
 
     def _confirm_replace_segments(self) -> bool:
         active = [s for s in self.segments if s["status"] in ("pending", "exported")]
@@ -2255,24 +2381,6 @@ class MainWindow(QMainWindow):
         self.player.command("seek", new_pos, "absolute")
         self._update_position_label()
 
-    def seek_to_segment_start(self):
-        if not self._require_player():
-            return
-        start, _ = self._segment_bounds()
-        self.player.command("seek", start, "absolute")
-        self._update_position_label()
-
-    def seek_to_segment_end(self):
-        if not self._require_player():
-            return
-        _, end = self._segment_bounds()
-        preview_end = max(0.0, end - 0.05)
-        self.player.command("seek", preview_end, "absolute")
-        self.player.pause = True
-        self._stop_playback_timer()
-        self._update_play_button()
-        self._update_position_label()
-
     def keyPressEvent(self, event: QKeyEvent):
         fw = self.focusWidget()
         if isinstance(fw, (QLineEdit, QSpinBox, QDoubleSpinBox, QAbstractSpinBox)):
@@ -2417,13 +2525,47 @@ class MainWindow(QMainWindow):
         if not self._prompt_save_before_close():
             event.ignore()
             return
+        if self.thread_pool.activeThreadCount() > 0:
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Warning)
+            box.setWindowTitle("Tareas en segundo plano")
+            box.setText(
+                "Hay tareas en segundo plano en curso (extracción de subtítulos, "
+                "generación de clips, traducción, etc.).\n\n"
+                "Cerrar ahora puede dejarlas incompletas o perder notificaciones en la interfaz."
+            )
+            wait_btn = box.addButton(
+                "Esperar a que termine", QMessageBox.AcceptRole
+            )
+            force_btn = box.addButton("Forzar cierre", QMessageBox.DestructiveRole)
+            cancel_btn = box.addButton("Cancelar", QMessageBox.RejectRole)
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked is cancel_btn or clicked is None:
+                event.ignore()
+                return
+            if clicked is wait_btn:
+                wait_dlg = QProgressDialog(
+                    "Esperando a que terminen las tareas en curso…",
+                    None,
+                    0,
+                    0,
+                    self,
+                )
+                wait_dlg.setWindowTitle("Esperando…")
+                wait_dlg.setWindowModality(Qt.WindowModal)
+                wait_dlg.setMinimumDuration(0)
+                wait_dlg.setCancelButton(None)
+                wait_dlg.show()
+                app = QApplication.instance()
+                if app is not None:
+                    app.processEvents()
+                self.thread_pool.waitForDone(900_000)
+                wait_dlg.close()
         self._save_deepl_key_to_config()
         self._save_gemini_key_to_config()
         self._shutdown_mpv_player()
         super().closeEvent(event)
-
-    def _nudge(self, spinbox, delta):
-        spinbox.setValue(max(0.0, spinbox.value() + delta))
 
     def _on_series_name_changed(self, text: str):
         self._series_name = text.strip()

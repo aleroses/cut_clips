@@ -67,6 +67,7 @@ from media.probe import (
     find_sidecar_subtitle, subtitle_extract_path,
 )
 from ui.media_info_dialog import MediaInfoDialog
+from ui.no_scroll_spinbox import NoScrollDoubleSpinBox
 from ui.mpv_embed import configure_mpv_environment, mpv_player_kwargs
 from ui.parser_options_widget import ParserOptions
 from ui.subtitle_load_dialog import SubtitleLoadDialog
@@ -367,6 +368,11 @@ class MainWindow(QMainWindow):
     _DEEPL_CONFIG_DIR = os.path.expanduser("~/.config/anki_video_tool")
     _DEEPL_KEY_FILE = os.path.join(_DEEPL_CONFIG_DIR, "deepl_key.txt")
     _GEMINI_KEY_FILE = os.path.join(_DEEPL_CONFIG_DIR, "gemini_key.txt")
+    _BACKGROUND_TASK_CLOSE_MESSAGE_GENERIC = (
+        "Hay tareas en segundo plano en curso (extracción de subtítulos, "
+        "generación de clips, traducción, etc.).\n\n"
+        "Cerrar ahora puede dejarlas incompletas o perder notificaciones en la interfaz."
+    )
 
     def __init__(self):
         super().__init__()
@@ -406,6 +412,7 @@ class MainWindow(QMainWindow):
         self._batch_previous_status = {}
 
         self.thread_pool = QThreadPool()
+        self._active_background_task_description: str | None = None
         self._translation_task_generation = 0
         self._translation_task: TranslationTask | None = None
         self._pending_extract_options = None
@@ -855,6 +862,7 @@ class MainWindow(QMainWindow):
 
     def _launch_extract_subtitle_task(self, task: ExtractSubtitleTask):
         self._show_subtitle_extract_progress()
+        self._active_background_task_description = "Extrayendo subtítulos del vídeo"
         task.signals.finished.connect(self._on_extract_finished)
         self.thread_pool.start(task)
 
@@ -1246,7 +1254,7 @@ class MainWindow(QMainWindow):
 
         time_layout = QHBoxLayout()
         time_layout.addWidget(QLabel("Start:"))
-        self.start_spin = QDoubleSpinBox()
+        self.start_spin = NoScrollDoubleSpinBox()
         self.start_spin.setDecimals(3)
         self.start_spin.setRange(0, 99999)
         self.start_spin.setSingleStep(0.1)
@@ -1255,7 +1263,7 @@ class MainWindow(QMainWindow):
 
         end_layout = QHBoxLayout()
         end_layout.addWidget(QLabel("End:  "))
-        self.end_spin = QDoubleSpinBox()
+        self.end_spin = NoScrollDoubleSpinBox()
         self.end_spin.setDecimals(3)
         self.end_spin.setRange(0, 99999)
         self.end_spin.setSingleStep(0.1)
@@ -1324,14 +1332,14 @@ class MainWindow(QMainWindow):
         padding_group_layout = QVBoxLayout(padding_group)
         padding_row = QHBoxLayout()
         padding_row.addWidget(QLabel("Padding inicio:"))
-        self.padding_start_spin = QDoubleSpinBox()
+        self.padding_start_spin = NoScrollDoubleSpinBox()
         self.padding_start_spin.setDecimals(3)
         self.padding_start_spin.setRange(0, 30)
         self.padding_start_spin.setSingleStep(0.05)
         self.padding_start_spin.valueChanged.connect(self._on_padding_changed)
         padding_row.addWidget(self.padding_start_spin)
         padding_row.addWidget(QLabel("final:"))
-        self.padding_end_spin = QDoubleSpinBox()
+        self.padding_end_spin = NoScrollDoubleSpinBox()
         self.padding_end_spin.setDecimals(3)
         self.padding_end_spin.setRange(0, 30)
         self.padding_end_spin.setSingleStep(0.05)
@@ -1703,6 +1711,7 @@ class MainWindow(QMainWindow):
             raise
         finally:
             self._hide_subtitle_extract_progress()
+            self._active_background_task_description = None
 
     def _confirm_replace_segments(self) -> bool:
         active = [s for s in self.segments if s["status"] in ("pending", "exported")]
@@ -2529,11 +2538,15 @@ class MainWindow(QMainWindow):
             box = QMessageBox(self)
             box.setIcon(QMessageBox.Warning)
             box.setWindowTitle("Tareas en segundo plano")
-            box.setText(
-                "Hay tareas en segundo plano en curso (extracción de subtítulos, "
-                "generación de clips, traducción, etc.).\n\n"
-                "Cerrar ahora puede dejarlas incompletas o perder notificaciones en la interfaz."
-            )
+            count = self.thread_pool.activeThreadCount()
+            desc = self._active_background_task_description
+            if count == 1 and desc:
+                box.setText(
+                    f"Hay una tarea en segundo plano en curso: {desc}.\n\n"
+                    "Cerrar ahora puede dejarla incompleta."
+                )
+            else:
+                box.setText(self._BACKGROUND_TASK_CLOSE_MESSAGE_GENERIC)
             wait_btn = box.addButton(
                 "Esperar a que termine", QMessageBox.AcceptRole
             )
@@ -2820,6 +2833,7 @@ class MainWindow(QMainWindow):
             cancel_token=self._batch_cancel_token,
         )
         task.signals.finished.connect(self._on_batch_finished)
+        self._active_background_task_description = "Generando clips en lote"
         self.thread_pool.start(task)
 
     def cancel_batch_generation(self):
@@ -2866,6 +2880,7 @@ class MainWindow(QMainWindow):
                 self, "Error en lote",
                 f"Completados: {len(completed_ids)} de {job_count}.\n\n{detail}"
             )
+        self._active_background_task_description = None
 
     # -- Generación de clips (FFmpeg) ----------------------------------------
 
@@ -2935,6 +2950,7 @@ class MainWindow(QMainWindow):
             audio_track=self.audio_track, video_track=self.video_track,
         )
         task.signals.finished.connect(self._on_cut_finished)
+        self._active_background_task_description = "Generando clip de vídeo/audio"
         self.thread_pool.start(task)
 
     def cut_selected_segment(self):
@@ -2959,6 +2975,7 @@ class MainWindow(QMainWindow):
                     QMessageBox.critical(self, "Error al generar clip", message[-800:])
                 break
         self._refresh_list()
+        self._active_background_task_description = None
 
     # -- Exportar TSV ---------------------------------------------------------
 
@@ -3089,6 +3106,9 @@ class MainWindow(QMainWindow):
 
         return basename, 0, translation_note
 
+    def _translation_provider_label(self, provider: str) -> str:
+        return {"deepl": "DeepL", "gemini": "Gemini"}.get(provider, provider)
+
     def _start_background_translation(
         self, provider: str, pending_unique: list[str], pending_count: int
     ) -> None:
@@ -3112,6 +3132,8 @@ class MainWindow(QMainWindow):
         )
         self._translation_task = task
         task.signals.finished.connect(self._on_translation_task_finished)
+        label = self._translation_provider_label(provider)
+        self._active_background_task_description = f"Traduciendo texto con {label}"
         self.thread_pool.start(task)
 
     def _release_translation_task(self, task: TranslationTask) -> None:
@@ -3129,44 +3151,47 @@ class MainWindow(QMainWindow):
         translations: dict,
         error_message: str,
     ) -> None:
-        task = self._translation_task
-        if task is None:
-            return
-        task_generation = task.task_generation
-        project_path = task.project_path
-        pending_count = task.pending_count
-        self._release_translation_task(task)
+        try:
+            task = self._translation_task
+            if task is None:
+                return
+            task_generation = task.task_generation
+            project_path = task.project_path
+            pending_count = task.pending_count
+            self._release_translation_task(task)
 
-        if project_path != self._project_path:
-            return
-        if task_generation != self._translation_task_generation:
-            return
+            if project_path != self._project_path:
+                return
+            if task_generation != self._translation_task_generation:
+                return
 
-        if not success:
-            detail = error_message or "Error desconocido."
-            self.statusBar().showMessage(
-                f"{pending_count} clip(s) sin traducir: {detail}"
-            )
-            return
+            if not success:
+                detail = error_message or "Error desconocido."
+                self.statusBar().showMessage(
+                    f"{pending_count} clip(s) sin traducir: {detail}"
+                )
+                return
 
-        updated = False
-        for seg in self.segments:
-            if seg.get("status") in ("exported", "outdated"):
-                translation = translations.get(seg["text"], "")
-                if translation:
-                    seg["translation"] = translation
-                    updated = True
-        if updated:
-            self._mark_project_modified()
+            updated = False
+            for seg in self.segments:
+                if seg.get("status") in ("exported", "outdated"):
+                    translation = translations.get(seg["text"], "")
+                    if translation:
+                        seg["translation"] = translation
+                        updated = True
+            if updated:
+                self._mark_project_modified()
 
-        self._auto_export_tsv(background_translation=False)
+            self._auto_export_tsv(background_translation=False)
 
-        if error_message:
-            self.statusBar().showMessage(
-                f"Traducción completada, TSV actualizado. {error_message}"
-            )
-        else:
-            self.statusBar().showMessage("Traducción completada, TSV actualizado")
+            if error_message:
+                self.statusBar().showMessage(
+                    f"Traducción completada, TSV actualizado. {error_message}"
+                )
+            else:
+                self.statusBar().showMessage("Traducción completada, TSV actualizado")
+        finally:
+            self._active_background_task_description = None
 
     def export_tsv(self):
         # Exportación manual: traducción síncrona (el usuario espera el resultado).

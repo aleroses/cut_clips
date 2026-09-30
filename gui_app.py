@@ -1210,26 +1210,6 @@ class MainWindow(QMainWindow):
         playback_group = QGroupBox("Previsualización (mpv — no genera archivos)")
         playback_layout = QVBoxLayout(playback_group)
 
-        preview_note = QLabel(
-            "«Probar clip» reproduce el segmento en bucle con el vídeo original. "
-            "No se crea ningún archivo en disco."
-        )
-        preview_note.setWordWrap(True)
-        preview_note.setStyleSheet("color: gray; font-size: 11px;")
-        playback_layout.addWidget(preview_note)
-
-        row1 = QHBoxLayout()
-        self.preview_btn = QPushButton("🔁 Probar clip")
-        self.preview_btn.clicked.connect(self.preview_selected_clip)
-        self.play_btn = QPushButton("⏸ Pausar")
-        self.play_btn.clicked.connect(self.toggle_play_pause)
-        self.stop_btn = QPushButton("■ Detener")
-        self.stop_btn.clicked.connect(self.stop_preview)
-        row1.addWidget(self.preview_btn)
-        row1.addWidget(self.play_btn)
-        row1.addWidget(self.stop_btn)
-        playback_layout.addLayout(row1)
-
         self.position_label = QLabel("Posición: —")
         playback_layout.addWidget(self.position_label)
 
@@ -1243,68 +1223,82 @@ class MainWindow(QMainWindow):
         self._extract_progress_bar.setVisible(False)
         playback_layout.addWidget(self._extract_progress_bar)
 
-        hint = QLabel(
-            "Atajos: Espacio = probar/pausa  |  ←/→ = ±1 s  |  "
-            "Ctrl+Z / Ctrl+Shift+Z = deshacer/rehacer"
-        )
-        hint.setStyleSheet("color: gray; font-size: 11px;")
-        playback_layout.addWidget(hint)
+        preview_main_row = QHBoxLayout()
+        actions_col = QVBoxLayout()
+        self.preview_btn = QPushButton("🔁 Probar clip")
+        self.preview_btn.clicked.connect(self.preview_selected_clip)
+        actions_col.addWidget(self.preview_btn)
+        self.play_btn = QPushButton("⏸ Pausar")
+        self.play_btn.clicked.connect(self.toggle_play_pause)
+        actions_col.addWidget(self.play_btn)
+        self.generate_btn = QPushButton("💾 Generar clip (WebM + MP3)")
+        self.generate_btn.clicked.connect(self.generate_selected_clip)
+        actions_col.addWidget(self.generate_btn)
+        preview_main_row.addLayout(actions_col)
 
-        left_layout.addWidget(playback_group)
+        vline = QFrame()
+        vline.setFrameShape(QFrame.Shape.VLine)
+        vline.setFrameShadow(QFrame.Shadow.Sunken)
+        vline.setFixedWidth(2)
+        preview_main_row.addWidget(vline)
 
-        time_layout = QHBoxLayout()
-        time_layout.addWidget(QLabel("Start:"))
+        times_col = QVBoxLayout()
+        start_row = QHBoxLayout()
+        start_row.addWidget(QLabel("Start:"))
         self.start_spin = NoScrollDoubleSpinBox()
         self.start_spin.setDecimals(3)
         self.start_spin.setRange(0, 99999)
         self.start_spin.setSingleStep(0.1)
-        time_layout.addWidget(self.start_spin)
-        left_layout.addLayout(time_layout)
+        start_row.addWidget(self.start_spin)
+        times_col.addLayout(start_row)
 
-        end_layout = QHBoxLayout()
-        end_layout.addWidget(QLabel("End:  "))
+        end_row = QHBoxLayout()
+        end_row.addWidget(QLabel("End:  "))
         self.end_spin = NoScrollDoubleSpinBox()
         self.end_spin.setDecimals(3)
         self.end_spin.setRange(0, 99999)
         self.end_spin.setSingleStep(0.1)
-        end_layout.addWidget(self.end_spin)
+        end_row.addWidget(self.end_spin)
+        times_col.addLayout(end_row)
 
         self.start_spin.valueChanged.connect(self._on_segment_bounds_changed)
         self.end_spin.valueChanged.connect(self._on_segment_bounds_changed)
 
-        left_layout.addLayout(end_layout)
-
-        apply_btn = QPushButton("Aplicar tiempos a la línea seleccionada")
+        apply_btn = QPushButton("Aplicar tiempos a la\nlínea seleccionada")
+        apply_btn.setMinimumHeight(44)
         apply_btn.clicked.connect(self.apply_times_to_selected)
-        left_layout.addWidget(apply_btn)
+        times_col.addWidget(apply_btn)
+
+        preview_main_row.addLayout(times_col, 1)
+        playback_layout.addLayout(preview_main_row)
+
+        left_layout.addWidget(playback_group)
 
         text_group = QGroupBox("Texto y referencia")
         text_group_layout = QVBoxLayout(text_group)
         text_group_layout.setSpacing(4)
         text_group_layout.setContentsMargins(8, 6, 8, 6)
-        text_group_layout.addWidget(QLabel("Texto:"))
+
         self.segment_text_edit = QPlainTextEdit()
         self.segment_text_edit.setPlaceholderText("Texto de la oración seleccionada…")
         self.segment_text_edit.setMaximumHeight(52)
         self.segment_text_edit.textChanged.connect(self._on_segment_text_changed)
         text_group_layout.addWidget(self.segment_text_edit)
 
-        reference_header = QHBoxLayout()
-        self.reference_label = QLabel("Texto de referencia:")
-        reference_header.addWidget(self.reference_label)
-        reference_header.addStretch()
-        self.load_reference_btn = QPushButton("Cargar externo…")
-        self.load_reference_btn.clicked.connect(self.load_external_reference_text)
-        reference_header.addWidget(self.load_reference_btn)
-        text_group_layout.addLayout(reference_header)
-
         self.reference_text_display = QPlainTextEdit()
         self.reference_text_display.setReadOnly(True)
         self.reference_text_display.setMaximumHeight(52)
         self.reference_text_display.setPlaceholderText("(sin texto de referencia cargado)")
         text_group_layout.addWidget(self.reference_text_display)
-        self.reference_label.setVisible(False)
         self.reference_text_display.setVisible(False)
+
+        reference_btn_row = QHBoxLayout()
+        reference_btn_row.addStretch()
+        self.load_reference_btn = QPushButton("Cargar externo…")
+        self.load_reference_btn.clicked.connect(self.load_external_reference_text)
+        reference_btn_row.addWidget(self.load_reference_btn)
+        text_group_layout.addLayout(reference_btn_row)
+
         left_layout.addWidget(text_group)
 
         generate_group = QGroupBox("Generación (FFmpeg — crea archivos)")
@@ -1347,10 +1341,6 @@ class MainWindow(QMainWindow):
         padding_row.addWidget(self.padding_end_spin)
         padding_group_layout.addLayout(padding_row)
         generate_layout.addWidget(padding_group)
-
-        self.generate_btn = QPushButton("💾 Generar clip (WebM + MP3)")
-        self.generate_btn.clicked.connect(self.generate_selected_clip)
-        generate_layout.addWidget(self.generate_btn)
 
         batch_row = QHBoxLayout()
         self.batch_generate_btn = QPushButton("⚡ Generar todos pendientes")
@@ -1947,7 +1937,6 @@ class MainWindow(QMainWindow):
         self.cues_detail.setPlainText(header + "\n".join(lines))
 
     def _set_reference_panel_visible(self, visible: bool) -> None:
-        self.reference_label.setVisible(visible)
         self.reference_text_display.setVisible(visible)
         if not visible:
             self.reference_text_display.clear()

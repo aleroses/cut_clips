@@ -39,7 +39,11 @@ import os
 import sys
 import time
 import traceback
+import webbrowser
 from dataclasses import replace
+
+# Sustituye por tu enlace real (Ko-fi, Buy Me a Coffee, etc.)
+DONATION_URL = "https://ko-fi.com/TU_USUARIO_AQUI"
 
 from PySide6.QtCore import Qt, QRunnable, QThreadPool, Signal, QObject, QTimer, Slot
 from PySide6.QtGui import QKeyEvent, QKeySequence
@@ -413,6 +417,7 @@ class MainWindow(QMainWindow):
 
         self.thread_pool = QThreadPool()
         self._active_background_task_description: str | None = None
+        self._status_message_protected_until = 0.0
         self._translation_task_generation = 0
         self._translation_task: TranslationTask | None = None
         self._pending_extract_options = None
@@ -859,10 +864,38 @@ class MainWindow(QMainWindow):
         self._extract_progress_label.setVisible(False)
         self._extract_progress_bar.setVisible(False)
         self._extract_progress_label.setText(self._EXTRACT_PROGRESS_HINT)
+        self._sync_background_task_banner()
+
+    def _set_active_background_task_description(self, description: str | None) -> None:
+        self._active_background_task_description = description
+        self._sync_background_task_banner()
+
+    def _sync_background_task_banner(self) -> None:
+        desc = self._active_background_task_description
+        if not desc or self._extract_progress_bar.isVisible():
+            self._background_task_label.setVisible(False)
+            self._background_task_bar.setVisible(False)
+            return
+        if desc.startswith("Traduciendo"):
+            text = f"{desc} — el TSV aún no incluye estas traducciones."
+        else:
+            text = desc
+        self._background_task_label.setText(text)
+        self._background_task_label.setVisible(True)
+        self._background_task_bar.setVisible(True)
+
+    def _show_persistent_status(self, msg: str, minimum_ms: int = 8000) -> None:
+        self._status_message_protected_until = time.monotonic() + minimum_ms / 1000.0
+        self.statusBar().showMessage(msg, minimum_ms)
+
+    def _show_status_message(self, msg: str, timeout: int = 0) -> None:
+        if time.monotonic() < self._status_message_protected_until:
+            return
+        self.statusBar().showMessage(msg, timeout)
 
     def _launch_extract_subtitle_task(self, task: ExtractSubtitleTask):
         self._show_subtitle_extract_progress()
-        self._active_background_task_description = "Extrayendo subtítulos del vídeo"
+        self._set_active_background_task_description("Extrayendo subtítulos del vídeo")
         task.signals.finished.connect(self._on_extract_finished)
         self.thread_pool.start(task)
 
@@ -1132,20 +1165,29 @@ class MainWindow(QMainWindow):
                 pass
         self.player = None
 
-    def _select_segment_by_id(self, seg_id):
+    def _select_segment_by_id(self, seg_id, *, scroll_value: int | None = None):
+        bar = self.segment_list.verticalScrollBar()
         for row in range(self.segment_list.count()):
             item = self.segment_list.item(row)
             if item.data(Qt.UserRole) == seg_id:
                 self.segment_list.setCurrentRow(row)
+                if scroll_value is not None:
+                    bar.setValue(
+                        max(bar.minimum(), min(scroll_value, bar.maximum()))
+                    )
                 return
         pending = self._pending_segments()
         if pending:
             self.segment_list.setCurrentRow(0)
+            if scroll_value is not None:
+                bar.setValue(
+                    max(bar.minimum(), min(scroll_value, bar.maximum()))
+                )
 
     def _restore_snapshot(self, snap):
         self.segments = snap["segments"]
         self.next_id = snap["next_id"]
-        self._refresh_list()
+        self._refresh_list(preserve_scroll=False)
         selected_id = snap.get("selected_id")
         if selected_id is not None:
             self._select_segment_by_id(selected_id)
@@ -1468,10 +1510,49 @@ class MainWindow(QMainWindow):
         cues_layout.addWidget(self.cues_detail)
         right_layout.addWidget(cues_group)
 
+        self.donation_btn = QPushButton("☕ Cómprame un café (o un bug menos)")
+        self.donation_btn.setToolTip(
+            "Cada donación corrige aproximadamente 0.5 bugs. Ayúdanos a llegar a 1."
+        )
+        self.donation_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.donation_btn.setMaximumHeight(32)
+        self.donation_btn.setStyleSheet(
+            "QPushButton {"
+            "  background-color: #FFD4B8;"
+            "  color: #5C4033;"
+            "  border: 1px solid #E8B896;"
+            "  border-radius: 4px;"
+            "  padding: 4px 10px;"
+            "  font-size: 12px;"
+            "}"
+            "QPushButton:hover { background-color: #FFC9A3; }"
+            "QPushButton:pressed { background-color: #F0B890; }"
+        )
+        self.donation_btn.clicked.connect(lambda: webbrowser.open(DONATION_URL))
+        right_layout.addWidget(self.donation_btn)
+
         splitter.addWidget(right)
         splitter.setSizes([650, 450])
 
-        self.setCentralWidget(splitter)
+        central = QWidget()
+        central_layout = QVBoxLayout(central)
+        central_layout.setContentsMargins(0, 0, 0, 0)
+        central_layout.setSpacing(4)
+        central_layout.addWidget(splitter, 1)
+
+        self._background_task_label = QLabel()
+        self._background_task_label.setWordWrap(True)
+        self._background_task_label.setStyleSheet("color: gray; font-size: 11px;")
+        self._background_task_label.setVisible(False)
+        central_layout.addWidget(self._background_task_label)
+
+        self._background_task_bar = QProgressBar()
+        self._background_task_bar.setRange(0, 0)
+        self._background_task_bar.setFixedHeight(6)
+        self._background_task_bar.setVisible(False)
+        central_layout.addWidget(self._background_task_bar)
+
+        self.setCentralWidget(central)
         self.setStatusBar(QStatusBar())
         self.statusBar().showMessage("Abre un vídeo y un subtítulo para empezar.")
 
@@ -1701,7 +1782,7 @@ class MainWindow(QMainWindow):
             raise
         finally:
             self._hide_subtitle_extract_progress()
-            self._active_background_task_description = None
+            self._set_active_background_task_description(None)
 
     def _confirm_replace_segments(self) -> bool:
         active = [s for s in self.segments if s["status"] in ("pending", "exported")]
@@ -1799,7 +1880,9 @@ class MainWindow(QMainWindow):
             f"{seg['text'][:60]}"
         )
 
-    def _refresh_list(self, *, select_id: int | None = None):
+    def _refresh_list(
+        self, *, select_id: int | None = None, preserve_scroll: bool = True
+    ):
         if self._refreshing_list:
             return
         self._refreshing_list = True
@@ -1809,6 +1892,8 @@ class MainWindow(QMainWindow):
                 if select_id is None:
                     item = self.segment_list.currentItem()
                     select_id = item.data(Qt.UserRole) if item else None
+                bar = self.segment_list.verticalScrollBar()
+                saved_scroll = bar.value() if preserve_scroll else None
                 self.segment_list.clear()
                 for seg in self.segments:
                     if seg["status"] == "deleted":
@@ -1833,8 +1918,15 @@ class MainWindow(QMainWindow):
                     header += f"  ({exported} generada(s))"
                 self.list_header_label.setText(header)
 
+                if saved_scroll is not None:
+                    bar.setValue(
+                        max(bar.minimum(), min(saved_scroll, bar.maximum()))
+                    )
+
                 if select_id is not None:
-                    self._select_segment_by_id(select_id)
+                    self._select_segment_by_id(
+                        select_id, scroll_value=saved_scroll
+                    )
             finally:
                 self.segment_list.blockSignals(False)
         finally:
@@ -1856,13 +1948,16 @@ class MainWindow(QMainWindow):
     def _clear_preview_display(self):
         self._preview_display_id = None
 
-    def _revert_preview_status_on_others(self, keep_id: int | None = None):
+    def _revert_preview_status_on_others(self, keep_id: int | None = None) -> bool:
+        changed = False
         for s in self.segments:
             if s["id"] == keep_id or s["status"] != "preview":
                 continue
             s.pop("preview_start", None)
             s.pop("preview_end", None)
             s["status"] = "pending"
+            changed = True
+        return changed
 
     def _sync_editor_widgets_to_segment(self, seg: dict):
         """Actualiza spinboxes, texto y cues_detail desde un segment dict (sin refrescar lista)."""
@@ -1880,8 +1975,10 @@ class MainWindow(QMainWindow):
         self._update_reference_text_display(seg)
 
     def on_segment_selected(self, row):
+        had_preview_tag = self._preview_display_id is not None
         self._clear_preview_display()
-        self._revert_preview_status_on_others()
+        reverted_preview = self._revert_preview_status_on_others()
+        needs_list_refresh = had_preview_tag or reverted_preview
         seg = self._get_selected_segment()
         self._text_edit_undo_pending = False
         if seg is None:
@@ -1890,14 +1987,16 @@ class MainWindow(QMainWindow):
             self.segment_text_edit.blockSignals(False)
             self._update_cues_detail(None)
             self._update_reference_text_display(None)
-            self.segment_list.blockSignals(True)
-            self._refresh_list()
-            self.segment_list.blockSignals(False)
+            if needs_list_refresh:
+                self.segment_list.blockSignals(True)
+                self._refresh_list()
+                self.segment_list.blockSignals(False)
             return
         self._sync_editor_widgets_to_segment(seg)
-        self.segment_list.blockSignals(True)
-        self._refresh_list(select_id=seg["id"])
-        self.segment_list.blockSignals(False)
+        if needs_list_refresh:
+            self.segment_list.blockSignals(True)
+            self._refresh_list(select_id=seg["id"])
+            self.segment_list.blockSignals(False)
 
     def _on_segment_text_changed(self):
         seg = self._get_selected_segment()
@@ -2004,7 +2103,7 @@ class MainWindow(QMainWindow):
             apply_outdated_status(seg, current)
         self._refresh_list(select_id=seg["id"])
         self._mark_project_modified()
-        self.statusBar().showMessage(f"Tiempos actualizados para la línea id={seg['id']}.")
+        self._show_status_message(f"Tiempos actualizados para la línea id={seg['id']}.")
 
     def _text_from_cue_indices(self, cue_indices: list) -> str:
         parts = []
@@ -2322,7 +2421,7 @@ class MainWindow(QMainWindow):
         self._enable_segment_loop(start, end)
         self._mark_segment_previewed(seg, start, end)
         self._mark_project_modified()
-        self.statusBar().showMessage(
+        self._show_status_message(
             f"Previsualizando id={seg['id']} (sin generar archivos). "
             "Pulsa «Probar clip» de nuevo para repetir."
         )
@@ -2519,6 +2618,38 @@ class MainWindow(QMainWindow):
         else:
             self._clear_gemini_key_config()
 
+    def _drain_queued_background_handlers(
+        self, app: QApplication, timeout_sec: float = 60.0
+    ) -> None:
+        """Procesa slots queued (p. ej. traducción) tras waitForDone del pool."""
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            app.processEvents()
+            if (
+                self._translation_task is None
+                and self._active_background_task_description is None
+                and self.thread_pool.activeThreadCount() == 0
+            ):
+                break
+        for _ in range(20):
+            app.processEvents()
+
+    def _maybe_export_tsv_after_background_wait(self) -> None:
+        """Re-export idempotente si hay traducciones en memoria tras esperar al pool."""
+        if not self._project_path:
+            return
+        has_translations = any(
+            seg.get("translation")
+            for seg in self.segments
+            if seg.get("status") in ("exported", "outdated")
+        )
+        if not has_translations:
+            return
+        try:
+            self._auto_export_tsv(background_translation=False)
+        except Exception:
+            pass
+
     def closeEvent(self, event):
         if not self._prompt_save_before_close():
             event.ignore()
@@ -2563,6 +2694,9 @@ class MainWindow(QMainWindow):
                 if app is not None:
                     app.processEvents()
                 self.thread_pool.waitForDone(900_000)
+                if app is not None:
+                    self._drain_queued_background_handlers(app)
+                    self._maybe_export_tsv_after_background_wait()
                 wait_dlg.close()
         self._save_deepl_key_to_config()
         self._save_gemini_key_to_config()
@@ -2822,7 +2956,7 @@ class MainWindow(QMainWindow):
             cancel_token=self._batch_cancel_token,
         )
         task.signals.finished.connect(self._on_batch_finished)
-        self._active_background_task_description = "Generando clips en lote"
+        self._set_active_background_task_description("Generando clips en lote")
         self.thread_pool.start(task)
 
     def cancel_batch_generation(self):
@@ -2869,7 +3003,7 @@ class MainWindow(QMainWindow):
                 self, "Error en lote",
                 f"Completados: {len(completed_ids)} de {job_count}.\n\n{detail}"
             )
-        self._active_background_task_description = None
+        self._set_active_background_task_description(None)
 
     # -- Generación de clips (FFmpeg) ----------------------------------------
 
@@ -2939,7 +3073,7 @@ class MainWindow(QMainWindow):
             audio_track=self.audio_track, video_track=self.video_track,
         )
         task.signals.finished.connect(self._on_cut_finished)
-        self._active_background_task_description = "Generando clip de vídeo/audio"
+        self._set_active_background_task_description("Generando clip de vídeo/audio")
         self.thread_pool.start(task)
 
     def cut_selected_segment(self):
@@ -2964,7 +3098,7 @@ class MainWindow(QMainWindow):
                     QMessageBox.critical(self, "Error al generar clip", message[-800:])
                 break
         self._refresh_list()
-        self._active_background_task_description = None
+        self._set_active_background_task_description(None)
 
     # -- Exportar TSV ---------------------------------------------------------
 
@@ -3122,7 +3256,7 @@ class MainWindow(QMainWindow):
         self._translation_task = task
         task.signals.finished.connect(self._on_translation_task_finished)
         label = self._translation_provider_label(provider)
-        self._active_background_task_description = f"Traduciendo texto con {label}"
+        self._set_active_background_task_description(f"Traduciendo texto con {label}")
         self.thread_pool.start(task)
 
     def _release_translation_task(self, task: TranslationTask) -> None:
@@ -3156,7 +3290,7 @@ class MainWindow(QMainWindow):
 
             if not success:
                 detail = error_message or "Error desconocido."
-                self.statusBar().showMessage(
+                self._show_persistent_status(
                     f"{pending_count} clip(s) sin traducir: {detail}"
                 )
                 return
@@ -3174,13 +3308,16 @@ class MainWindow(QMainWindow):
             self._auto_export_tsv(background_translation=False)
 
             if error_message:
-                self.statusBar().showMessage(
-                    f"Traducción completada, TSV actualizado. {error_message}"
+                self._show_persistent_status(
+                    "Traducción completada — TSV actualizado. Ya puedes revisarlo. "
+                    f"{error_message}"
                 )
             else:
-                self.statusBar().showMessage("Traducción completada, TSV actualizado")
+                self._show_persistent_status(
+                    "Traducción completada — TSV actualizado. Ya puedes revisarlo."
+                )
         finally:
-            self._active_background_task_description = None
+            self._set_active_background_task_description(None)
 
     def export_tsv(self):
         # Exportación manual: traducción síncrona (el usuario espera el resultado).

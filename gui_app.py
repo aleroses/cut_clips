@@ -35,6 +35,8 @@ Notas de diseño:
       TSV se exporta igual, solo que con la columna de traducción vacía.
 """
 
+import difflib
+import html
 import os
 import sys
 import time
@@ -46,13 +48,13 @@ from dataclasses import replace
 DONATION_URL = "https://ko-fi.com/TU_USUARIO_AQUI"
 
 from PySide6.QtCore import Qt, QRunnable, QThreadPool, Signal, QObject, QTimer, Slot
-from PySide6.QtGui import QKeyEvent, QKeySequence
+from PySide6.QtGui import QColor, QKeyEvent, QKeySequence
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QListWidget, QListWidgetItem, QPushButton, QLabel, QDoubleSpinBox,
     QFileDialog, QMessageBox, QFrame, QSplitter, QStatusBar, QGroupBox,
     QLineEdit, QCheckBox, QDialog, QSpinBox, QAbstractSpinBox, QPlainTextEdit,
-    QProgressBar, QProgressDialog, QScrollArea, QComboBox,
+    QTextEdit, QProgressBar, QProgressDialog, QScrollArea, QComboBox,
 )
 
 from core.subtitle_parser import generate_sentences, normalize_case, fix_punctuation_spacing, parse_srt_blocks
@@ -223,9 +225,54 @@ def _format_fingerprint_value(key: str, value) -> str:
     if key == "video_path" and isinstance(value, str):
         return os.path.basename(value) or value
     if key == "text" and isinstance(value, str):
-        text = value.replace("\n", " ")
-        return text if len(text) <= 60 else text[:57] + "..."
+        return value.replace("\n", " ")
     return str(value)
+
+
+_OUTDATED_DIFF_BASE = "#8B4513"
+_OUTDATED_DIFF_HIGHLIGHT = QColor(Qt.darkYellow).name()
+
+
+def _highlight_diff_html(old: str, new: str) -> tuple[str, str]:
+    """HTML de cada valor; solo los tramos distintos van en el color de [OUTDATED]."""
+    matcher = difflib.SequenceMatcher(None, old, new, autojunk=False)
+    old_parts: list[str] = []
+    new_parts: list[str] = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        old_chunk = html.escape(old[i1:i2])
+        new_chunk = html.escape(new[j1:j2])
+        if tag == "equal":
+            old_parts.append(old_chunk)
+            new_parts.append(new_chunk)
+        elif tag == "delete":
+            old_parts.append(
+                f'<span style="color:{_OUTDATED_DIFF_HIGHLIGHT}">{old_chunk}</span>'
+            )
+        elif tag == "insert":
+            new_parts.append(
+                f'<span style="color:{_OUTDATED_DIFF_HIGHLIGHT}">{new_chunk}</span>'
+            )
+        else:
+            old_parts.append(
+                f'<span style="color:{_OUTDATED_DIFF_HIGHLIGHT}">{old_chunk}</span>'
+            )
+            new_parts.append(
+                f'<span style="color:{_OUTDATED_DIFF_HIGHLIGHT}">{new_chunk}</span>'
+            )
+    return "".join(old_parts), "".join(new_parts)
+
+
+def _fingerprint_field_diff_html(label: str, old: str, new: str) -> str:
+    """Etiqueta, valor anterior, flecha centrada y valor nuevo."""
+    old_html, new_html = _highlight_diff_html(old, new)
+    base = _OUTDATED_DIFF_BASE
+    label_html = html.escape(label)
+    return (
+        f'<p style="margin:0; color:{base}"><b>{label_html}:</b></p>'
+        f'<p style="margin:0; color:{base}">{old_html}</p>'
+        f'<p align="center" style="margin:0; color:{base}">↓</p>'
+        f'<p style="margin:0; color:{base}">{new_html}</p>'
+    )
 
 
 class TranslationSignals(QObject):
@@ -1566,13 +1613,13 @@ class MainWindow(QMainWindow):
             "Selecciona una línea para ver qué bloques SRT componen este clip."
         )
         cues_layout.addWidget(self.cues_detail)
-        self.outdated_diff_detail = QPlainTextEdit()
+        self.outdated_diff_detail = QTextEdit()
         self.outdated_diff_detail.setReadOnly(True)
-        self.outdated_diff_detail.setMaximumHeight(100)
+        self.outdated_diff_detail.setMaximumHeight(160)
         self.outdated_diff_detail.setPlaceholderText(
             "Cambios respecto al clip generado (solo clips [OUTDATED])."
         )
-        self.outdated_diff_detail.setStyleSheet("color: #8B4513; font-size: 11px;")
+        self.outdated_diff_detail.setStyleSheet("font-size: 11px;")
         self.outdated_diff_detail.setVisible(False)
         cues_layout.addWidget(self.outdated_diff_detail)
         right_layout.addWidget(cues_group)
@@ -2119,21 +2166,24 @@ class MainWindow(QMainWindow):
             self.outdated_diff_detail.setVisible(True)
             return
         current = self._segment_fingerprint(seg)
-        lines = []
+        blocks = []
         for key, label in _FINGERPRINT_DIFF_FIELDS:
             old_val = stored.get(key)
             new_val = current.get(key)
             if old_val != new_val:
-                lines.append(
-                    f"{label}: {_format_fingerprint_value(key, old_val)}"
-                    f" → {_format_fingerprint_value(key, new_val)}"
+                blocks.append(
+                    _fingerprint_field_diff_html(
+                        label,
+                        _format_fingerprint_value(key, old_val),
+                        _format_fingerprint_value(key, new_val),
+                    )
                 )
-        if not lines:
+        if not blocks:
             self.outdated_diff_detail.setPlainText(
                 "(Sin diferencias detectadas en fingerprint.)"
             )
         else:
-            self.outdated_diff_detail.setPlainText("\n".join(lines))
+            self.outdated_diff_detail.setHtml("<br>".join(blocks))
         self.outdated_diff_detail.setVisible(True)
 
     def _set_reference_panel_visible(self, visible: bool) -> None:

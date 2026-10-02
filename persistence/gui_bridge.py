@@ -147,9 +147,42 @@ def apply_outdated_status(seg: dict, current_fingerprint: dict[str, Any]) -> boo
     return False
 
 
-def export_sequence_number(segments: list[dict], seg_id: int) -> int:
+_LINE_NUMBER_RE = re.compile(r"Line_(\d+)")
+
+
+def line_number_in_path(path: str | None) -> int | None:
+    """Extrae N de un nombre ...Line_NNNN, o None si no está."""
+    if not path:
+        return None
+    match = _LINE_NUMBER_RE.search(path)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def infer_sequence_offset_from_clips(clips: list[Clip]) -> int | None:
+    """Offset para que posición local + offset coincida con el Line_ ya exportado.
+
+    None si ningún clip generated/outdated tiene Line_ en video_path o audio_path.
+    Usa el primer clip exportado en orden de internal_index. La posición local
+    cuenta todos los clips, igual que export_sequence_number().
+    """
+    local = 0
+    for clip in sorted(clips, key=lambda c: c.internal_index):
+        local += 1
+        if clip.status not in (ClipStatus.GENERATED, ClipStatus.OUTDATED):
+            continue
+        number = line_number_in_path(clip.video_path) or line_number_in_path(clip.audio_path)
+        if number is None:
+            continue
+        return number - local
+    return None
+
+
+def export_sequence_number(segments: list[dict], seg_id: int, *, offset: int = 0) -> int:
     """Posición 1-based entre segmentos activos, en orden de la lista segments.
 
+    offset: sumar para numeración global de serie (ver series_manifest.json).
     Debe mantenerse sincronizado con MainWindow._export_sequence_number() en gui_app.py.
     """
     seq = 0
@@ -158,7 +191,7 @@ def export_sequence_number(segments: list[dict], seg_id: int) -> int:
             continue
         seq += 1
         if seg["id"] == seg_id:
-            return seq
+            return seq + offset
     raise ValueError(f"Segmento id={seg_id} no encontrado entre segmentos activos")
 
 
@@ -275,6 +308,7 @@ def build_project_from_gui(
     padding_start: float = 0.0,
     padding_end: float = 0.0,
     reference_alignment: dict | None = None,
+    sequence_offset: int = 0,
 ) -> Project:
     output_dir = "output_files"
     if video_path:
@@ -288,7 +322,7 @@ def build_project_from_gui(
     for seg in segments:
         if seg.get("status") == "deleted":
             continue
-        seq_num = export_sequence_number(segments, seg["id"])
+        seq_num = export_sequence_number(segments, seg["id"], offset=sequence_offset)
         clip = segment_to_clip(
             seg,
             internal_index=internal_index,
@@ -366,6 +400,7 @@ class LoadedGuiState:
     padding_start: float
     padding_end: float
     reference_alignment: dict | None
+    sequence_offset: int | None = None
 
 
 def load_gui_state_from_project(project: Project) -> LoadedGuiState:
@@ -411,4 +446,5 @@ def load_gui_state_from_project(project: Project) -> LoadedGuiState:
         padding_start=episode.padding_start,
         padding_end=episode.padding_end,
         reference_alignment=reference_alignment,
+        sequence_offset=infer_sequence_offset_from_clips(episode.clips),
     )

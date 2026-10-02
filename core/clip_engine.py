@@ -21,6 +21,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import warnings
 
 from core.naming import clip_audio_filename, clip_video_filename
@@ -230,6 +231,111 @@ def _translate_gemini_one_by_one(client, texts: list[str], target_lang: str) -> 
 
 
 _GEMINI_MODEL = "gemini-flash-latest"
+_GEMINI_SUB_BATCH_SIZE = 12
+_GEMINI_TRANSIENT_RETRY_SEC = 5
+
+
+def _is_gemini_transient_quota_error(exc: Exception) -> bool:
+    msg = str(exc).upper()
+    combined = msg + type(exc).__name__.upper()
+    return (
+        "429" in combined
+        or "503" in combined
+        or "RESOURCE_EXHAUSTED" in combined
+        or "UNAVAILABLE" in combined
+    )
+
+
+def _gemini_with_one_retry(callable_fn):
+    try:
+        return callable_fn()
+    except Exception as e:
+        if not _is_gemini_transient_quota_error(e):
+            raise
+        time.sleep(_GEMINI_TRANSIENT_RETRY_SEC)
+        return callable_fn()
+
+
+def _translate_gemini_batch_with_retry(
+    client, texts: list[str], target_lang: str
+) -> list[str]:
+    return _gemini_with_one_retry(
+        lambda: _translate_gemini_batch(client, texts, target_lang)
+    )
+
+
+def _translate_gemini_one_by_one_with_retry(
+    client, texts: list[str], target_lang: str
+) -> list[str]:
+    return _gemini_with_one_retry(
+        lambda: _translate_gemini_one_by_one(client, texts, target_lang)
+    )
+
+
+def _merge_gemini_chunk_into_bucket(
+    client,
+    chunk: list[str],
+    target_lang: str,
+    bucket: dict,
+    failed: list[str],
+) -> bool:
+    """Traduce chunk vía API y actualiza bucket. Devuelve si hubo cambios en caché."""
+    parsed = _translate_gemini_batch_with_retry(client, chunk, target_lang)
+    if len([p for p in parsed if p]) != len(chunk):
+        print("Gemini: respuesta batch incompleta, traduciendo línea a línea...")
+        parsed = _translate_gemini_one_by_one_with_retry(client, chunk, target_lang)
+    cache_dirty = False
+    for original, translation in zip(chunk, parsed):
+        translation = (translation or "").strip()
+        if translation:
+            bucket[original] = translation
+            cache_dirty = True
+        else:
+            failed.append(original)
+            if original in bucket:
+                del bucket[original]
+                cache_dirty = True
+    return cache_dirty
+
+
+def _translate_gemini_texts_resilient(
+    client,
+    to_translate: list[str],
+    target_lang: str,
+    bucket: dict,
+    failed: list[str],
+) -> bool:
+    cache_dirty = False
+    try:
+        if _merge_gemini_chunk_into_bucket(
+            client, to_translate, target_lang, bucket, failed
+        ):
+            cache_dirty = True
+        return cache_dirty
+    except Exception as e:
+        if not _is_gemini_transient_quota_error(e):
+            _raise_gemini_error(e)
+        print(
+            f"Gemini: lote completo no disponible ({e}); "
+            f"reintentando en sub-lotes de {_GEMINI_SUB_BATCH_SIZE}..."
+        )
+        for i in range(0, len(to_translate), _GEMINI_SUB_BATCH_SIZE):
+            chunk = to_translate[i : i + _GEMINI_SUB_BATCH_SIZE]
+            try:
+                if _merge_gemini_chunk_into_bucket(
+                    client, chunk, target_lang, bucket, failed
+                ):
+                    cache_dirty = True
+            except Exception as chunk_exc:
+                if _is_gemini_transient_quota_error(chunk_exc):
+                    failed.extend(chunk)
+                    print(
+                        f"Gemini: sub-lote omitido tras reintento "
+                        f"({len(chunk)} línea(s)): {chunk_exc}"
+                    )
+                else:
+                    _raise_gemini_error(chunk_exc)
+        return cache_dirty
 
 
 def _raise_gemini_error(exc: Exception) -> None:
@@ -277,21 +383,9 @@ def translate_texts_gemini(texts, api_key, target_lang, cache_path):
             client = genai.Client(api_key=api_key)
             print(f"Traduciendo {len(to_translate)} línea(s) nueva(s) con Gemini "
                   f"(ya en caché: {len(set(texts)) - len(to_translate)})...")
-            parsed = _translate_gemini_batch(client, to_translate, target_lang)
-            if len([p for p in parsed if p]) != len(to_translate):
-                print("Gemini: respuesta batch incompleta, traduciendo línea a línea...")
-                parsed = _translate_gemini_one_by_one(client, to_translate, target_lang)
-            cache_dirty = False
-            for original, translation in zip(to_translate, parsed):
-                translation = (translation or "").strip()
-                if translation:
-                    bucket[original] = translation
-                    cache_dirty = True
-                else:
-                    failed.append(original)
-                    if original in bucket:
-                        del bucket[original]
-                        cache_dirty = True
+            cache_dirty = _translate_gemini_texts_resilient(
+                client, to_translate, target_lang, bucket, failed
+            )
             if cache_dirty:
                 cache["gemini"] = bucket
                 save_translation_cache(cache_path, cache)

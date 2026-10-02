@@ -54,7 +54,9 @@ def build_rows_from_project(project_path: str):
         if gui_status not in GENERATED_STATUSES:
             continue
 
-        seq_num = export_sequence_number(segments, seg["id"])
+        seq_num = export_sequence_number(
+            segments, seg["id"], offset=state.sequence_offset or 0
+        )
         video_filename = clip_video_filename(series_name, file_episode_label, seq_num)
         audio_filename = clip_audio_filename(series_name, file_episode_label, seq_num)
         text = seg.get("text", "")

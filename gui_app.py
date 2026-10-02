@@ -87,6 +87,7 @@ from persistence.gui_bridge import (
     parse_season_episode,
 )
 from persistence.store import default_project_path, load_project, save_project
+from persistence.series_manifest import read_series_manifest, write_series_manifest
 
 try:
     import mpv
@@ -183,6 +184,50 @@ def _translation_failure_note(failed: list[str], total: int | None = None) -> st
     return f"{len(failed)} clip(s) sin traducir: respuesta vacía de la API"
 
 
+_GEMINI_RATE_LIMIT_HINT = (
+    " — puedes esperar unos minutos, cambiar a DeepL temporalmente, "
+    "o revisar tu cuota en https://ai.google.dev/gemini-api/docs/rate-limits"
+)
+
+
+def _append_gemini_rate_limit_hint(message: str) -> str:
+    upper = message.upper()
+    if any(
+        token in upper
+        for token in ("429", "503", "RESOURCE_EXHAUSTED", "UNAVAILABLE")
+    ):
+        hint_body = _GEMINI_RATE_LIMIT_HINT.strip(" —")
+        if hint_body not in message:
+            return message + _GEMINI_RATE_LIMIT_HINT
+    return message
+
+
+_FINGERPRINT_DIFF_FIELDS = (
+    ("start", "Start"),
+    ("end", "End"),
+    ("padding_start", "Padding inicio"),
+    ("padding_end", "Padding fin"),
+    ("text", "Texto"),
+    ("video_path", "Vídeo"),
+    ("audio_track", "Pista audio"),
+    ("video_track", "Pista vídeo"),
+    ("width", "Ancho"),
+    ("height", "Alto"),
+    ("crf", "CRF"),
+)
+
+
+def _format_fingerprint_value(key: str, value) -> str:
+    if value is None:
+        return "—"
+    if key == "video_path" and isinstance(value, str):
+        return os.path.basename(value) or value
+    if key == "text" and isinstance(value, str):
+        text = value.replace("\n", " ")
+        return text if len(text) <= 60 else text[:57] + "..."
+    return str(value)
+
+
 class TranslationSignals(QObject):
     finished = Signal(bool, dict, str)  # success, translations, error_message
 
@@ -231,7 +276,8 @@ class TranslationTask(QRunnable):
             )
             self.signals.finished.emit(True, translations, error_message)
         except Exception as e:
-            self.signals.finished.emit(False, {}, str(e))
+            err = _append_gemini_rate_limit_hint(str(e))
+            self.signals.finished.emit(False, {}, err)
 
 
 class CutSignals(QObject):
@@ -408,6 +454,8 @@ class MainWindow(QMainWindow):
         self._season = 1
         self._episode_num = 1
         self._project_root_dir = "."
+        self._series_sequence_offset_cache: int | None = None
+        self._sequence_offset_from_exports: int | None = None
         self.padding_start = 0.0
         self.padding_end = 0.0
 
@@ -577,6 +625,7 @@ class MainWindow(QMainWindow):
             padding_start=self.padding_start,
             padding_end=self.padding_end,
             reference_alignment=self.reference_alignment,
+            sequence_offset=self._series_sequence_offset(),
         )
 
     def save_project(self):
@@ -633,6 +682,7 @@ class MainWindow(QMainWindow):
             save_project(project, path)
             self._project_path = path
             self._project_root_dir = os.path.dirname(os.path.abspath(path)) or "."
+            self._invalidate_series_sequence_cache()
             self._clear_project_modified()
             msg = f"Proyecto guardado: {path}"
             try:
@@ -690,11 +740,13 @@ class MainWindow(QMainWindow):
         self.segment_text_edit.blockSignals(False)
         self._update_cues_detail(None)
         self._set_reference_panel_visible(False)
+        self._reset_series_sequence_state()
         self._refresh_list()
 
     def _apply_loaded_project_state(self, state, project_path: str):
         self._project_path = project_path
         self._project_root_dir = state.root_dir
+        self._reset_series_sequence_state()
         self._series_name = state.series_name
         self._season = state.season
         self._episode_num = state.episode_num
@@ -714,6 +766,9 @@ class MainWindow(QMainWindow):
         self.next_id = state.next_id
         self._set_translation_provider(state.translation_provider)
         self.series_name_edit.setText(state.series_name)
+        self._sequence_offset_from_exports = state.sequence_offset
+        if state.sequence_offset is not None:
+            self._series_sequence_offset_cache = state.sequence_offset
         self.padding_start_spin.setValue(state.padding_start)
         self.padding_end_spin.setValue(state.padding_end)
 
@@ -746,6 +801,7 @@ class MainWindow(QMainWindow):
         self._clear_project_modified()
         if self._reevaluate_outdated_segments():
             self._refresh_list()
+        self._publish_series_high_water()
         msg = f"Proyecto cargado: {os.path.basename(project_path)}"
         if self.reference_alignment:
             current_checksum = align_reference_text(self.cue_map, "")["checksum"]
@@ -756,6 +812,7 @@ class MainWindow(QMainWindow):
                 )
         if missing_video:
             msg += f"  |  Vídeo no encontrado: {state.video_path}"
+        msg += self._series_numbering_status_suffix()
         self.statusBar().showMessage(msg)
         if self.reference_alignment:
             self._set_reference_panel_visible(True)
@@ -1197,6 +1254,7 @@ class MainWindow(QMainWindow):
         self._update_undo_actions()
         seg = self._get_selected_segment()
         self._update_cues_detail(seg)
+        self._update_outdated_diff_detail(seg)
         self._update_reference_text_display(seg)
         self._mark_project_modified()
 
@@ -1508,6 +1566,15 @@ class MainWindow(QMainWindow):
             "Selecciona una línea para ver qué bloques SRT componen este clip."
         )
         cues_layout.addWidget(self.cues_detail)
+        self.outdated_diff_detail = QPlainTextEdit()
+        self.outdated_diff_detail.setReadOnly(True)
+        self.outdated_diff_detail.setMaximumHeight(100)
+        self.outdated_diff_detail.setPlaceholderText(
+            "Cambios respecto al clip generado (solo clips [OUTDATED])."
+        )
+        self.outdated_diff_detail.setStyleSheet("color: #8B4513; font-size: 11px;")
+        self.outdated_diff_detail.setVisible(False)
+        cues_layout.addWidget(self.outdated_diff_detail)
         right_layout.addWidget(cues_group)
 
         self.donation_btn = QPushButton("☕ Cómprame un café (o un bug menos)")
@@ -1606,6 +1673,7 @@ class MainWindow(QMainWindow):
             self.episode_title = extract_episode_title(raw_title) or ""
             self._project_path = None
             self._project_root_dir = os.path.dirname(os.path.abspath(path)) or "."
+            self._reset_series_sequence_state()
 
             self._stop_mpv_playback()
             self.reference_alignment = None
@@ -1632,6 +1700,7 @@ class MainWindow(QMainWindow):
                 f"Vídeo cargado: {os.path.basename(path)}"
                 + (f'  |  Título: "{self.episode_title}"' if self.episode_title else "")
                 + f"  |  Pistas: {track_info}"
+                + self._series_numbering_status_suffix()
             )
         except Exception:
             traceback.print_exc()
@@ -1972,6 +2041,7 @@ class MainWindow(QMainWindow):
         self.segment_text_edit.blockSignals(False)
         self._update_position_label()
         self._update_cues_detail(seg)
+        self._update_outdated_diff_detail(seg)
         self._update_reference_text_display(seg)
 
     def on_segment_selected(self, row):
@@ -1986,6 +2056,7 @@ class MainWindow(QMainWindow):
             self.segment_text_edit.clear()
             self.segment_text_edit.blockSignals(False)
             self._update_cues_detail(None)
+            self._update_outdated_diff_detail(None)
             self._update_reference_text_display(None)
             if needs_list_refresh:
                 self.segment_list.blockSignals(True)
@@ -2034,6 +2105,36 @@ class MainWindow(QMainWindow):
             )
         header = f"Clip id={seg['id']} — {len(indices)} bloque(s) SRT:\n"
         self.cues_detail.setPlainText(header + "\n".join(lines))
+
+    def _update_outdated_diff_detail(self, seg: dict | None) -> None:
+        if seg is None or seg.get("status") != "outdated":
+            self.outdated_diff_detail.clear()
+            self.outdated_diff_detail.setVisible(False)
+            return
+        stored = seg.get("generation_fingerprint")
+        if not stored:
+            self.outdated_diff_detail.setPlainText(
+                "(Sin fingerprint guardado — regenera el clip.)"
+            )
+            self.outdated_diff_detail.setVisible(True)
+            return
+        current = self._segment_fingerprint(seg)
+        lines = []
+        for key, label in _FINGERPRINT_DIFF_FIELDS:
+            old_val = stored.get(key)
+            new_val = current.get(key)
+            if old_val != new_val:
+                lines.append(
+                    f"{label}: {_format_fingerprint_value(key, old_val)}"
+                    f" → {_format_fingerprint_value(key, new_val)}"
+                )
+        if not lines:
+            self.outdated_diff_detail.setPlainText(
+                "(Sin diferencias detectadas en fingerprint.)"
+            )
+        else:
+            self.outdated_diff_detail.setPlainText("\n".join(lines))
+        self.outdated_diff_detail.setVisible(True)
 
     def _set_reference_panel_visible(self, visible: bool) -> None:
         self.reference_text_display.setVisible(visible)
@@ -2705,8 +2806,14 @@ class MainWindow(QMainWindow):
 
     def _on_series_name_changed(self, text: str):
         self._series_name = text.strip()
+        if not self._episode_has_exported_clips():
+            self._series_sequence_offset_cache = None
+            self._sequence_offset_from_exports = None
         if self._reevaluate_outdated_segments():
             self._refresh_list()
+        seg = self._get_selected_segment()
+        if seg is not None:
+            self._update_outdated_diff_detail(seg)
         self._mark_project_modified()
 
     def _on_padding_changed(self, _value):
@@ -2714,6 +2821,9 @@ class MainWindow(QMainWindow):
         self.padding_end = self.padding_end_spin.value()
         if self._reevaluate_outdated_segments():
             self._refresh_list()
+        seg = self._get_selected_segment()
+        if seg is not None:
+            self._update_outdated_diff_detail(seg)
         self._mark_project_modified()
 
     def _segment_fingerprint(self, seg: dict) -> dict:
@@ -2758,7 +2868,40 @@ class MainWindow(QMainWindow):
     def _file_episode_label(self) -> str:
         return format_episode_label(self._season, self._episode_num, style="compact")
 
-    def _export_sequence_number(self, seg_id: int) -> int:
+    def _reset_series_sequence_state(self) -> None:
+        self._series_sequence_offset_cache = None
+        self._sequence_offset_from_exports = None
+
+    def _invalidate_series_sequence_cache(self) -> None:
+        """Olvida un offset tomado del manifest si este episodio aún no exportó clips."""
+        if self._sequence_offset_from_exports is not None:
+            return
+        if self._episode_has_exported_clips():
+            return
+        self._series_sequence_offset_cache = None
+
+    def _episode_has_exported_clips(self) -> bool:
+        return any(
+            seg.get("status") in ("exported", "outdated") for seg in self.segments
+        )
+
+    def _episode_workspace_dir(self) -> str:
+        if self._project_root_dir and self._project_root_dir != ".":
+            return os.path.abspath(self._project_root_dir)
+        if self._project_path:
+            return os.path.dirname(os.path.abspath(self._project_path))
+        if self.video_path:
+            return os.path.dirname(os.path.abspath(self.video_path))
+        return os.path.abspath(".")
+
+    def _series_dir(self) -> str | None:
+        episode_dir = self._episode_workspace_dir()
+        parent = os.path.dirname(episode_dir)
+        if not parent or os.path.normpath(parent) == os.path.normpath(episode_dir):
+            return None
+        return parent
+
+    def _local_export_sequence_number(self, seg_id: int) -> int:
         """Posición 1-based entre segmentos activos, en orden de self.segments."""
         seq = 0
         for seg in self.segments:
@@ -2768,6 +2911,73 @@ class MainWindow(QMainWindow):
             if seg["id"] == seg_id:
                 return seq
         raise ValueError(f"Segmento id={seg_id} no encontrado entre segmentos activos")
+
+    def _series_sequence_offset(self) -> int:
+        """Suma a la posición local para obtener Line_XXXX.
+
+        Si el episodio ya exportó clips, el offset sale de esos nombres
+        (Line_N - posición local) y no vuelve a sumarse el manifest.
+        Si todavía no hay exports, el offset es last_sequence_number del
+        manifest en la carpeta padre, o 0 si no existe.
+        """
+        if self._series_sequence_offset_cache is not None:
+            return self._series_sequence_offset_cache
+        if self._sequence_offset_from_exports is not None:
+            self._series_sequence_offset_cache = self._sequence_offset_from_exports
+            return self._series_sequence_offset_cache
+        series_dir = self._series_dir()
+        if not series_dir:
+            self._series_sequence_offset_cache = 0
+            return 0
+        manifest = read_series_manifest(
+            series_dir,
+            expected_series_name=self._effective_series_name(),
+        )
+        if manifest is None:
+            self._series_sequence_offset_cache = 0
+            return 0
+        offset = max(0, int(manifest.get("last_sequence_number", 0)))
+        self._series_sequence_offset_cache = offset
+        return offset
+
+    def _export_sequence_number(self, seg_id: int) -> int:
+        return self._local_export_sequence_number(seg_id) + self._series_sequence_offset()
+
+    def _publish_series_high_water(self) -> None:
+        """Escribe en el manifest el Line_ más alto ya exportado por este episodio."""
+        max_seq = 0
+        for seg in self.segments:
+            if seg.get("status") not in ("exported", "outdated"):
+                continue
+            try:
+                max_seq = max(max_seq, self._export_sequence_number(seg["id"]))
+            except ValueError:
+                continue
+        if max_seq:
+            self._bump_series_manifest(max_seq)
+
+    def _bump_series_manifest(self, sequence_number: int) -> None:
+        series_dir = self._series_dir()
+        if not series_dir:
+            return
+        write_series_manifest(
+            series_dir,
+            sequence_number,
+            series_name=self._effective_series_name(),
+        )
+
+    def _series_numbering_status_suffix(self) -> str:
+        offset = self._series_sequence_offset()
+        if offset <= 0:
+            self.series_name_edit.setToolTip("")
+            return ""
+        series_dir = self._series_dir() or ""
+        start_line = offset + 1
+        self.series_name_edit.setToolTip(
+            f"Numeración global de la serie: este episodio empieza en "
+            f"Line_{start_line:04d} (series_manifest.json en {series_dir})."
+        )
+        return f"  |  Numeración de serie: empieza en Line_{start_line:04d}"
 
     def _output_dir(self) -> str:
         if not self.video_path:
@@ -2982,6 +3192,15 @@ class MainWindow(QMainWindow):
         self._mark_project_modified()
         self._refresh_list()
 
+        max_seq = 0
+        for seg_id in completed_ids:
+            try:
+                max_seq = max(max_seq, self._export_sequence_number(seg_id))
+            except ValueError:
+                pass
+        if max_seq:
+            self._bump_series_manifest(max_seq)
+
         if success and not message:
             self.statusBar().showMessage(
                 f"Lote completado: {len(completed_ids)} clip(s) generados."
@@ -3089,6 +3308,7 @@ class MainWindow(QMainWindow):
                     series_name = self._effective_series_name()
                     file_episode_label = self._file_episode_label()
                     seq_num = self._export_sequence_number(seg["id"])
+                    self._bump_series_manifest(seq_num)
                     clip_name = clip_video_filename(series_name, file_episode_label, seq_num)
                     self.statusBar().showMessage(
                         f"Clip id={segment_id} generado: {clip_name}"
@@ -3290,6 +3510,7 @@ class MainWindow(QMainWindow):
 
             if not success:
                 detail = error_message or "Error desconocido."
+                detail = _append_gemini_rate_limit_hint(detail)
                 self._show_persistent_status(
                     f"{pending_count} clip(s) sin traducir: {detail}"
                 )
@@ -3385,7 +3606,11 @@ class MainWindow(QMainWindow):
                             _translation_failure_note(failed),
                         )
                 except Exception as e:
-                    QMessageBox.critical(self, "Error de traducción", str(e))
+                    QMessageBox.critical(
+                        self,
+                        "Error de traducción",
+                        _append_gemini_rate_limit_hint(str(e)),
+                    )
 
         skip_msg = self._should_skip_tsv_overwrite(path, len(rows_for_write))
         if skip_msg:

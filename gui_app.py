@@ -1991,8 +1991,9 @@ class MainWindow(QMainWindow):
         else:
             tag = ""
         check = "[✓] " if seg["status"] == "exported" else ""
+        seq = self._export_sequence_number(seg["id"])
         return (
-            f"{tag}{check}[{seg['start']:.3f} - {seg['end']:.3f}]  "
+            f"[{seq:04d}] {tag}{check}[{seg['start']:.3f} - {seg['end']:.3f}]  "
             f"{seg['text'][:60]}"
         )
 
@@ -2027,11 +2028,11 @@ class MainWindow(QMainWindow):
 
                 exported = self._exported_count()
                 outdated = self._outdated_count()
-                header = "Oraciones pendientes:"
-                if outdated:
-                    header += f"  ({outdated} desactualizada(s))"
-                if exported:
-                    header += f"  ({exported} generada(s))"
+                active = sum(1 for s in self.segments if s["status"] != "deleted")
+                header = (
+                    f"Oraciones pendientes: ({active} líneas) "
+                    f"({exported} generadas) ({outdated} desactualizada(s))"
+                )
                 self.list_header_label.setText(header)
 
                 if saved_scroll is not None:

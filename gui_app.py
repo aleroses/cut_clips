@@ -38,23 +38,26 @@ Notas de diseño:
 import difflib
 import html
 import os
+import re
 import sys
 import time
 import traceback
+import unicodedata
 import webbrowser
 from dataclasses import replace
 
 # Sustituye por tu enlace real (Ko-fi, Buy Me a Coffee, etc.)
 DONATION_URL = "https://ko-fi.com/TU_USUARIO_AQUI"
 
-from PySide6.QtCore import Qt, QRunnable, QThreadPool, Signal, QObject, QTimer, Slot
-from PySide6.QtGui import QColor, QKeyEvent, QKeySequence
+from PySide6.QtCore import Qt, QEvent, QRunnable, QThreadPool, Signal, QObject, QTimer, Slot
+from PySide6.QtGui import QColor, QKeyEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QListWidget, QListWidgetItem, QPushButton, QLabel, QDoubleSpinBox,
     QFileDialog, QMessageBox, QFrame, QSplitter, QStatusBar, QGroupBox,
     QLineEdit, QCheckBox, QDialog, QSpinBox, QAbstractSpinBox, QPlainTextEdit,
     QTextEdit, QProgressBar, QProgressDialog, QScrollArea, QComboBox,
+    QToolButton,
 )
 
 from core.subtitle_parser import generate_sentences, normalize_case, fix_punctuation_spacing, parse_srt_blocks
@@ -453,6 +456,34 @@ class ExtractSubtitleTask(QRunnable):
             _safe_task_emit(lambda: self.signals.finished.emit(0, False, str(e)))
 
 
+_SEARCH_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_SEARCH_WS_RE = re.compile(r"\s+")
+
+
+def _normalize_search_text(text: str) -> str:
+    """Minúsculas, sin tildes, sin etiquetas HTML y con espacios colapsados."""
+    text = html.unescape(text or "")
+    text = _SEARCH_HTML_TAG_RE.sub(" ", text)
+    decomposed = unicodedata.normalize("NFD", text)
+    without_marks = "".join(
+        ch for ch in decomposed if unicodedata.category(ch) != "Mn"
+    )
+    return _SEARCH_WS_RE.sub(" ", without_marks.casefold()).strip()
+
+
+def _search_text_matches(haystack: str, query: str, mode: str) -> bool:
+    """query y haystack ya normalizados. Frase exacta o todas las palabras."""
+    if not query:
+        return True
+    if mode == "words":
+        tokens = [token for token in query.split(" ") if token]
+        return all(
+            re.search(r"\b" + re.escape(token) + r"\b", haystack) is not None
+            for token in tokens
+        )
+    return re.search(r"\b" + re.escape(query) + r"\b", haystack) is not None
+
+
 # ---------------------------------------------------------------------------
 # Ventana principal
 # ---------------------------------------------------------------------------
@@ -462,6 +493,7 @@ class MainWindow(QMainWindow):
     _REFERENCE_STYLE_WARNING = (
         "QPlainTextEdit { background-color: #fff3cd; border: 1px solid #ffc107; }"
     )
+    _SEARCH_ACTIVE_STYLE = "QLineEdit { border: 1px solid #3d8bfd; }"
     _DEEPL_CONFIG_DIR = os.path.expanduser("~/.config/anki_video_tool")
     _DEEPL_KEY_FILE = os.path.join(_DEEPL_CONFIG_DIR, "deepl_key.txt")
     _GEMINI_KEY_FILE = os.path.join(_DEEPL_CONFIG_DIR, "gemini_key.txt")
@@ -770,6 +802,7 @@ class MainWindow(QMainWindow):
 
     def _reset_gui_for_project_load(self):
         """Limpia estado editable antes de aplicar un proyecto JSON (sin destruir mpv)."""
+        self._close_segment_search()
         self.stop_preview()
         self._clear_preview_display()
         self.segments = []
@@ -1585,8 +1618,70 @@ class MainWindow(QMainWindow):
         # --- Panel derecho: lista dinámica de trabajo ---
         right = QWidget()
         right_layout = QVBoxLayout(right)
+
+        header_row = QWidget()
+        header_layout = QHBoxLayout(header_row)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(4)
         self.list_header_label = QLabel("Oraciones pendientes:")
-        right_layout.addWidget(self.list_header_label)
+        header_layout.addWidget(self.list_header_label, stretch=1)
+        self.search_toggle_btn = QToolButton()
+        self.search_toggle_btn.setText("🔍")
+        self.search_toggle_btn.setToolTip("Buscar en las oraciones")
+        self.search_toggle_btn.setCheckable(True)
+        self.search_toggle_btn.setAutoRaise(True)
+        self.search_toggle_btn.setMaximumHeight(26)
+        self.search_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.search_toggle_btn.setStyleSheet(
+            "QToolButton { border: none; padding: 0 4px; font-size: 13px; }"
+            "QToolButton:checked { background-color: #e7f1ff; border-radius: 3px; }"
+        )
+        self.search_toggle_btn.toggled.connect(self._on_search_toggled)
+        header_layout.addWidget(self.search_toggle_btn)
+        right_layout.addWidget(header_row)
+        self._search_shortcut = QShortcut(QKeySequence("Ctrl+F"), self)
+        self._search_shortcut.activated.connect(self.search_toggle_btn.toggle)
+
+        self.search_bar = QWidget()
+        search_layout = QHBoxLayout(self.search_bar)
+        search_layout.setContentsMargins(0, 0, 0, 0)
+        search_layout.setSpacing(6)
+        self.search_edit = QLineEdit()
+        self.search_edit.setPlaceholderText("Buscar palabra o frase (ej. give up)…")
+        self.search_edit.setClearButtonEnabled(True)
+        self.search_edit.setMaximumHeight(26)
+        self.search_edit.setMinimumWidth(160)
+        search_layout.addWidget(self.search_edit, stretch=1)
+        self.search_mode_combo = QComboBox()
+        self.search_mode_combo.addItem("Frase exacta", "phrase")
+        self.search_mode_combo.addItem("Todas las palabras (cualquier orden)", "words")
+        self.search_mode_combo.setMaximumHeight(26)
+        search_layout.addWidget(self.search_mode_combo)
+        self.search_reference_checkbox = QCheckBox("Buscar también en referencia")
+        self.search_reference_checkbox.setVisible(False)
+        search_layout.addWidget(self.search_reference_checkbox)
+        self.search_match_label = QLabel("")
+        self.search_match_label.setStyleSheet("color: gray; font-size: 11px;")
+        search_layout.addWidget(self.search_match_label)
+        self.search_close_btn = QToolButton()
+        self.search_close_btn.setText("✕")
+        self.search_close_btn.setToolTip("Cerrar búsqueda")
+        self.search_close_btn.setAutoRaise(True)
+        self.search_close_btn.setMaximumHeight(26)
+        self.search_close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.search_close_btn.clicked.connect(self._close_segment_search)
+        search_layout.addWidget(self.search_close_btn)
+        self.search_bar.setVisible(False)
+        right_layout.addWidget(self.search_bar)
+
+        self._search_debounce = QTimer(self)
+        self._search_debounce.setSingleShot(True)
+        self._search_debounce.setInterval(200)
+        self._search_debounce.timeout.connect(self._apply_search_filter)
+        self.search_edit.textChanged.connect(self._schedule_search_filter)
+        self.search_edit.installEventFilter(self)
+        self.search_mode_combo.currentIndexChanged.connect(self._apply_search_filter_now)
+        self.search_reference_checkbox.toggled.connect(self._apply_search_filter_now)
 
         self.segment_list = QListWidget()
         self.segment_list.currentRowChanged.connect(self.on_segment_selected)
@@ -1704,6 +1799,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
+            self._close_segment_search()
             tracks = dialog.selection()
             self.audio_track = tracks.audio_track
             self.video_track = tracks.video_track
@@ -2044,10 +2140,150 @@ class MainWindow(QMainWindow):
                     self._select_segment_by_id(
                         select_id, scroll_value=saved_scroll
                     )
+                self._apply_search_filter()
             finally:
                 self.segment_list.blockSignals(False)
         finally:
             self._refreshing_list = False
+
+    def _schedule_search_filter(self, _text: str = "") -> None:
+        self._search_debounce.start()
+
+    def _apply_search_filter_now(self, *_args) -> None:
+        self._search_debounce.stop()
+        self._apply_search_filter()
+
+    def _on_search_toggled(self, checked: bool) -> None:
+        if checked:
+            self.search_bar.setVisible(True)
+            self._sync_search_reference_option()
+            self.search_edit.setFocus()
+            self.search_edit.selectAll()
+            return
+        self._dismiss_segment_search()
+
+    def _close_segment_search(self) -> None:
+        if self.search_toggle_btn.isChecked():
+            self.search_toggle_btn.setChecked(False)
+            return
+        self._dismiss_segment_search()
+
+    def _dismiss_segment_search(self) -> None:
+        self._search_debounce.stop()
+        self.search_edit.blockSignals(True)
+        self.search_edit.clear()
+        self.search_edit.blockSignals(False)
+        self.search_bar.setVisible(False)
+        self._apply_search_filter()
+
+    def _sync_search_reference_option(self) -> None:
+        checkbox = getattr(self, "search_reference_checkbox", None)
+        if checkbox is None:
+            return
+        available = self.reference_alignment is not None
+        checkbox.setVisible(available)
+        if not available and checkbox.isChecked():
+            checkbox.setChecked(False)
+
+    def _segment_reference_search_text(self, seg: dict) -> str:
+        alignment = self.reference_alignment
+        if not alignment:
+            return ""
+        indices = seg.get("cue_indices") or []
+        cue_reference_text = alignment.get("cue_reference_text") or {}
+        parts = [
+            cue_reference_text.get(int(idx), cue_reference_text.get(idx, ""))
+            for idx in indices
+        ]
+        return " ".join(part for part in parts if part).strip()
+
+    def _segment_search_haystack(self, seg: dict) -> str:
+        text = seg.get("text") or ""
+        if self.search_reference_checkbox.isChecked() and self.reference_alignment is not None:
+            reference = self._segment_reference_search_text(seg)
+            if reference:
+                text = f"{text} {reference}"
+        return _normalize_search_text(text)
+
+    def _apply_search_filter(self) -> None:
+        if not hasattr(self, "search_edit"):
+            return
+        query = _normalize_search_text(self.search_edit.text())
+        mode = self.search_mode_combo.currentData() or "phrase"
+        filtering = bool(query)
+        style = self._SEARCH_ACTIVE_STYLE if filtering else ""
+        if self.search_edit.styleSheet() != style:
+            self.search_edit.setStyleSheet(style)
+        by_id = {seg["id"]: seg for seg in self.segments}
+        current = self.segment_list.currentItem()
+        current_id = current.data(Qt.UserRole) if current is not None else None
+        scroll_bar = self.segment_list.verticalScrollBar()
+        saved_scroll = scroll_bar.value()
+        signals_blocked = self.segment_list.signalsBlocked()
+        if not signals_blocked:
+            self.segment_list.blockSignals(True)
+        matches = 0
+        try:
+            for row in range(self.segment_list.count()):
+                item = self.segment_list.item(row)
+                if not filtering:
+                    item.setHidden(False)
+                    continue
+                seg = by_id.get(item.data(Qt.UserRole))
+                haystack = self._segment_search_haystack(seg) if seg is not None else ""
+                hit = seg is not None and _search_text_matches(haystack, query, mode)
+                item.setHidden(not hit)
+                if hit:
+                    matches += 1
+            if current_id is not None:
+                now = self.segment_list.currentItem()
+                now_id = now.data(Qt.UserRole) if now is not None else None
+                if now_id != current_id:
+                    self._select_segment_by_id(current_id)
+        finally:
+            if not signals_blocked:
+                self.segment_list.blockSignals(False)
+            scroll_bar.setValue(
+                max(scroll_bar.minimum(), min(saved_scroll, scroll_bar.maximum()))
+            )
+        if not filtering:
+            self.search_match_label.clear()
+        elif matches == 1:
+            self.search_match_label.setText("1 coincidencia")
+        else:
+            self.search_match_label.setText(f"{matches} coincidencias")
+
+    def _focus_adjacent_search_match(self, direction: int) -> None:
+        if self._search_debounce.isActive():
+            self._search_debounce.stop()
+            self._apply_search_filter()
+        visible = [
+            row
+            for row in range(self.segment_list.count())
+            if not self.segment_list.item(row).isHidden()
+        ]
+        if not visible:
+            return
+        current = self.segment_list.currentRow()
+        if direction < 0:
+            previous = [row for row in visible if row < current]
+            target = previous[-1] if previous else visible[-1]
+        else:
+            following = [row for row in visible if row > current]
+            target = following[0] if following else visible[0]
+        self.segment_list.setCurrentRow(target)
+
+    def eventFilter(self, obj, event):
+        if obj is getattr(self, "search_edit", None) and event.type() == QEvent.Type.KeyPress:
+            key = event.key()
+            if key == Qt.Key.Key_Escape:
+                self._close_segment_search()
+                return True
+            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                direction = -1 if event.modifiers() & Qt.KeyboardModifier.ShiftModifier else 1
+                self._focus_adjacent_search_match(direction)
+                return True
+        return super().eventFilter(obj, event)
 
     def _pending_segments(self):
         return [s for s in self.segments if s["status"] in ("pending", "preview")]
@@ -2192,6 +2428,7 @@ class MainWindow(QMainWindow):
         if not visible:
             self.reference_text_display.clear()
             self.reference_text_display.setStyleSheet(self._REFERENCE_STYLE_NEUTRAL)
+        self._sync_search_reference_option()
 
     def _update_reference_text_display(self, seg: dict | None) -> None:
         if self.reference_alignment is None:

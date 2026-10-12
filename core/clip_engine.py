@@ -656,17 +656,26 @@ def write_anki_tsv(tsv_path, tsv_rows, translations):
     id | episode | episode_title | video | video_reference | video_audio |
     english_dialogs | spanish_dialogues | notes (vacío)"""
     with open(tsv_path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(
+            f,
+            delimiter="\t",
+            lineterminator="\n",
+            quoting=csv.QUOTE_MINIMAL,
+            doublequote=True,
+        )
         for i, text, video_filename, audio_filename, episode_label, episode_title in tsv_rows:
             translation = translations.get(text, "")
-            video_field = video_filename
-            video_reference_field = f"[sound:{video_filename}]"
-            video_audio_field = f"[sound:{audio_filename}]"
-            notes_field = ""
-            f.write(
-                f"{i:04d}\t{episode_label}\t{episode_title}\t{video_field}\t"
-                f"{video_reference_field}\t{video_audio_field}\t{text}\t"
-                f"{translation}\t{notes_field}\n"
-            )
+            writer.writerow([
+                f"{i:04d}",
+                episode_label,
+                episode_title,
+                video_filename,
+                f"[sound:{video_filename}]",
+                f"[sound:{audio_filename}]",
+                text,
+                translation,
+                "",
+            ])
 
 
 def compute_media_sizes(tsv_rows, output_dir):

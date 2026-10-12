@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "series_name": "Example_Series",
+  "root_dir": "series_root",
+  "last_clip_id": 2,
+  "episodes": [
+    {
+      "video_path": "videos/Episode One.mkv",
+      "season": 1,
+      "episode": 1,
+      "episode_label": "S01-Ep01",
+      "episode_title": "Pilot",
+      "subtitle_path": "videos/Episode One.srt",
+      "subtitle_track_index": 2,
+      "subtitle_language": "en",
+      "audio_track": 0,
+      "video_track": 0,
+      "padding_start": 0.25,
+      "padding_end": 0.4,
+      "media_info": {
+        "gui_parser_options": {
+          "offset": 0.0,
+          "scale": 1.0,
+          "language": "en"
+        }
+      },
+      "subtitles": [
+        {
+          "index": 0,
+          "start": 1.0,
+          "end": 2.5,
+          "text": "Hello there."
+        }
+      ],
+      "clips": [
+        {
+          "id": 2,
+          "internal_index": 0,
+          "subtitle_indices": [0],
+          "text": "Hello there.",
+          "translation": "Hola.",
+          "start": 1.0,
+          "end": 2.5,
+          "padding_start": 0.25,
+          "padding_end": 0.4,
+          "status": "generated",
+          "video_path": "output_files/Example_Series_S01E01_Line_0001.webm",
+          "audio_path": "output_files/Example_Series_S01E01_Line_0001.mp3",
+          "generation_fingerprint": {
+            "start": 1.0,
+            "end": 2.5,
+            "text": "Hello there."
+          },
+          "error_message": ""
+        }
+      ],
+      "translation": {
+        "provider": "none",
+        "target_lang": "ES",
+        "cache_path": ""
+      },
+      "output_dir": "output_files"
+    }
+  ]
+}

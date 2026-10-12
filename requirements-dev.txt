@@ -1,0 +1,3 @@
+# Dependencias solo para desarrollo y pruebas.
+# No forman parte de la ejecución de la aplicación (requirements.txt).
+pytest

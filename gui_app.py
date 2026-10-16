@@ -77,7 +77,9 @@ from media.probe import (
 )
 from ui.media_info_dialog import MediaInfoDialog
 from ui.no_scroll_spinbox import NoScrollDoubleSpinBox
-from ui.mpv_embed import configure_mpv_environment, mpv_player_kwargs
+from ui.mpv_embed import configure_mpv_environment, mpv_player_kwargs, prepare_mpv_library_path
+
+prepare_mpv_library_path()
 from ui.parser_options_widget import ParserOptions
 from ui.subtitle_load_dialog import SubtitleLoadDialog
 from ui.srt_split_dialog import SrtSplitDialog
@@ -2070,9 +2072,14 @@ class MainWindow(QMainWindow):
         filter_note = ""
         if result["skipped_by_filter"]:
             filter_note = f", {result['skipped_by_filter']} filtradas por duración/palabras"
+        encoding = result.get("encoding") or ""
+        encoding_note = ""
+        if encoding and encoding != "utf-8":
+            encoding_note = f" Codificación: {encoding}."
         self.statusBar().showMessage(
             f"{len(self.segments)} oraciones cargadas "
             f"({result['discarded_blocks']} bloques SDH descartados{filter_note})."
+            + encoding_note
             + (f"  Origen: {source}" if source else "")
         )
         return True
@@ -2346,12 +2353,14 @@ class MainWindow(QMainWindow):
                 self.segment_list.blockSignals(True)
                 self._refresh_list()
                 self.segment_list.blockSignals(False)
+            self._update_preview_controls()
             return
         self._sync_editor_widgets_to_segment(seg)
         if needs_list_refresh:
             self.segment_list.blockSignals(True)
             self._refresh_list(select_id=seg["id"])
             self.segment_list.blockSignals(False)
+        self._update_preview_controls()
 
     def _on_segment_text_changed(self):
         seg = self._get_selected_segment()

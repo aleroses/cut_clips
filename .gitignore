@@ -25,3 +25,6 @@ data/
 .DS_Store
 .vscode/
 .idea/
+
+# Otros
+questions.md

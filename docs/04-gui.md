@@ -242,6 +242,8 @@ los clips ya generados pasan a **`[OUTDATED]`** (amarillo en la lista).
 
 ## Cómo abrir un vídeo para editar
 
+### Debian / Ubuntu
+
 Desde la raíz del proyecto:
 
 ```bash
@@ -251,6 +253,33 @@ sudo apt install ffmpeg libmpv2    # sistema: ffprobe, ffmpeg, mpv
 
 python3 gui_app.py
 ```
+
+El audio de la previsualización usa `pulse,pipewire,alsa`. libmpv llega por el paquete del sistema (`libmpv2` o `libmpv1`).
+
+### Windows
+
+En Windows no hay `apt` ni `libmpv2`. Hacen falta, aparte del Python del proyecto:
+
+- FFmpeg en el `PATH` (`ffmpeg` y `ffprobe`).
+- La DLL de mpv en `%LOCALAPPDATA%\libmpv` (`libmpv-2.dll`, `mpv-2.dll` o `mpv-1.dll`). La aplicación añade esa carpeta sola antes de importar mpv.
+- El audio de la previsualización usa `wasapi`. No hace falta definir `ANKI_MPV_AO` ni ampliar el `PATH` en cada terminal.
+
+Desde PowerShell, en la raíz del proyecto y con el entorno virtual ya creado:
+
+```powershell
+Set-Location D:\1-Learn\cut_clips
+.\.venv\Scripts\python.exe .\gui_app.py
+```
+
+`Set-Location` solo hace falta para la ruta relativa `.\gui_app.py`. Desde otra carpeta:
+
+```powershell
+D:\1-Learn\cut_clips\.venv\Scripts\python.exe D:\1-Learn\cut_clips\gui_app.py
+```
+
+Cada vez que se quiera usar el programa hay que lanzar ese `python.exe`. No hay que repetir variables de entorno. Si la DLL no está en `%LOCALAPPDATA%\libmpv`, hay que poner su carpeta en el `PATH` de esa sesión o mover la DLL a esa ruta.
+
+Detalle del error de subtítulos ANSI/Windows-1252: [13-error-codificacion-srt.md](13-error-codificacion-srt.md).
 
 ### Pasos en la interfaz
 

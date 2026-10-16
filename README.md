@@ -43,8 +43,17 @@ pip install -r requirements.txt --break-system-packages
 On Debian/Ubuntu for GUI preview:
 
 ```bash
-sudo apt install libmpv2   # or libmpv1 depending on your release
+sudo apt install ffmpeg libmpv2   # or libmpv1 depending on your release
 ```
+
+On Windows, install FFmpeg so `ffmpeg` and `ffprobe` are on `PATH`, and put `libmpv-2.dll` in `%LOCALAPPDATA%\libmpv`. The GUI adds that folder itself and uses WASAPI for preview audio. From the project root:
+
+```powershell
+Set-Location D:\1-Learn\cut_clips
+.\.venv\Scripts\python.exe .\gui_app.py
+```
+
+Spanish step-by-step: [docs/04-gui.md](docs/04-gui.md). Open tasks: [docs/TAREAS.md](docs/TAREAS.md).
 
 ## Installation
 

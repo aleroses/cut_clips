@@ -638,3 +638,44 @@ python3 gui_app.py
 python3 -X faulthandler gui_app.py
 # Abrir vídeo A → Abrir vídeo B → Abrir proyecto .json → Cerrar app (sin munmap_chunk)
 ```
+
+---
+
+## Lectura de .srt Windows-1252 y arranque en Windows
+
+**Fecha:** 2026-10-16
+
+### Qué se hizo
+
+- Un `.srt` en Windows-1252 (byte `0xE8` = `è`) ya no aborta al abrirlo como UTF-8.
+- En Windows, la app busca `libmpv` en `%LOCALAPPDATA%\libmpv` y usa `wasapi` como audio por defecto.
+
+### Archivos
+
+- `core/subtitle_parser.py`
+- `ui/mpv_embed.py`
+- `gui_app.py`
+- `tests/test_subtitle_encoding.py`
+- `docs/13-error-codificacion-srt.md`
+
+Detalle para leer: [13-error-codificacion-srt.md](13-error-codificacion-srt.md).
+
+---
+
+## Documentación Windows, plan de la pausa en «Probar clip» y lista de tareas
+
+**Fecha:** 2026-10-16
+
+### Qué se hizo
+
+- Documentado el arranque en Windows (DLL en `%LOCALAPPDATA%\libmpv`, audio `wasapi`, comando del `.venv`), aparte del arranque Debian.
+- Plan de la pausa al inicio y al final de «Probar clip», sin cambiar la reproducción. Ver [14-plan-pausa-preview.md](14-plan-pausa-preview.md).
+- Lista de tareas en [TAREAS.md](TAREAS.md). Pendiente: implementar ese plan, nombres de película sin `S01E01`, y traducciones Gemini que no salen en el TSV.
+
+### Archivos
+
+- `docs/04-gui.md`
+- `docs/14-plan-pausa-preview.md`
+- `docs/TAREAS.md`
+- `README.md`
+- `docs/changelog.md`

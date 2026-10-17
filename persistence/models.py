@@ -199,6 +199,7 @@ class Episode:
     video_track: int = 0
     padding_start: float = 0.0
     padding_end: float = 0.0
+    media_kind: str = "series"
     media_info: dict[str, Any] = field(default_factory=dict)
     subtitles: list[SubtitleCue] = field(default_factory=list)
     clips: list[Clip] = field(default_factory=list)
@@ -206,7 +207,11 @@ class Episode:
     output_dir: str = "output_files"
 
     def __post_init__(self):
-        if not self.episode_label:
+        if self.media_kind not in ("movie", "series"):
+            self.media_kind = "series"
+        if self.media_kind == "movie":
+            self.episode_label = ""
+        elif not self.episode_label:
             from core.naming import format_episode_label
             self.episode_label = format_episode_label(self.season, self.episode)
 
@@ -229,6 +234,7 @@ class Episode:
             "video_track": self.video_track,
             "padding_start": self.padding_start,
             "padding_end": self.padding_end,
+            "media_kind": self.media_kind,
             "media_info": dict(self.media_info),
             "subtitles": [s.to_dict() for s in self.subtitles],
             "clips": [c.to_dict() for c in self.clips],
@@ -251,6 +257,7 @@ class Episode:
             video_track=int(data.get("video_track", 0)),
             padding_start=float(data.get("padding_start", 0.0)),
             padding_end=float(data.get("padding_end", 0.0)),
+            media_kind=str(data.get("media_kind", "series")),
             media_info=dict(data.get("media_info", {})),
             subtitles=[SubtitleCue.from_dict(s) for s in data.get("subtitles", [])],
             clips=[Clip.from_dict(c) for c in data.get("clips", [])],

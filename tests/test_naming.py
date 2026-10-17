@@ -13,6 +13,7 @@ from persistence.gui_bridge import (
     export_sequence_number,
     infer_sequence_offset_from_clips,
     line_number_in_path,
+    resolve_media_kind,
     segment_to_clip,
 )
 from persistence.models import Clip, ClipStatus
@@ -44,6 +45,23 @@ def test_tsv_filename_with_and_without_title():
     assert tsv_filename("Example_Series", "S01E01", "Pilot") == (
         "Example_Series_S01E01_Pilot_anki.tsv"
     )
+
+
+def test_movie_names_omit_episode_label():
+    assert clip_basename("Ratatouille", "", 1) == "Ratatouille_Line_0001"
+    assert clip_video_filename("Ratatouille", "", 1) == "Ratatouille_Line_0001.webm"
+    assert clip_audio_filename("Ratatouille", "", 1) == "Ratatouille_Line_0001.mp3"
+    assert tsv_filename("Ratatouille", "") == "Ratatouille_anki.tsv"
+    assert tsv_filename("Ratatouille", "", "Anyone_Can_Cook") == (
+        "Ratatouille_Anyone_Can_Cook_anki.tsv"
+    )
+
+
+def test_resolve_media_kind_from_filename():
+    assert resolve_media_kind("Show_S02E04.mkv") == ("series", 2, 4)
+    assert resolve_media_kind("Show.Episode.12.mkv") == ("series", 1, 12)
+    assert resolve_media_kind("Ratatouille (2007).mkv", "Ratatouille") == ("movie", 1, 1)
+    assert resolve_media_kind("movie.mkv", "Show S12E03") == ("series", 12, 3)
 
 
 def test_export_sequence_skips_deleted_and_ignores_internal_id():

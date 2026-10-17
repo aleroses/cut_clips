@@ -679,3 +679,71 @@ Detalle para leer: [13-error-codificacion-srt.md](13-error-codificacion-srt.md).
 - `docs/TAREAS.md`
 - `README.md`
 - `docs/changelog.md`
+
+---
+
+## «Probar clip» reproduce un archivo corto en bucle
+
+**Fecha:** 2026-10-16
+
+### Qué se hizo
+
+- La previsualización ya no salta dentro del MKV. Usa el `.webm` exportado si los tiempos coinciden, o un mp4 H.264 temporal.
+- Si ese archivo no se puede crear, queda el bucle A–B anterior.
+- El audio por defecto en Linux no cambia.
+
+### Archivos
+
+- `core/clip_engine.py`
+- `gui_app.py`
+- `tests/test_preview_clip.py`
+- `docs/15-reporte-preview-sin-pausa.md`
+- `docs/TAREAS.md`
+
+Detalle: [15-reporte-preview-sin-pausa.md](15-reporte-preview-sin-pausa.md).
+
+---
+
+## «Probar clip» vuelve al bucle del vídeo original
+
+**Fecha:** 2026-10-16
+
+### Qué se hizo
+
+- Se quitó el mp4 temporal de la previsualización. Cada cambio de tiempos esperaba un encode y el cambio de archivo en mpv podía cerrar el programa.
+- «Probar clip» vuelve a usar el bucle A–B del MKV ya cargado.
+- La pausa breve al saltar dentro del H.264 sigue. No hay un ajuste de mpv que la quite sin un archivo ya recortado.
+
+### Archivos
+
+- `gui_app.py`
+- `core/clip_engine.py`
+- `docs/15-reporte-preview-sin-pausa.md`
+- `docs/TAREAS.md`
+- `docs/14-plan-pausa-preview.md`
+
+Detalle: [15-reporte-preview-sin-pausa.md](15-reporte-preview-sin-pausa.md).
+
+---
+
+## Película o serie en el nombre del archivo
+
+**Fecha:** 2026-10-16
+
+### Qué se hizo
+
+- Desplegable Película / Serie. Sin `SxxExx` ni `Episode N` en el nombre, el archivo se trata como película.
+- Una película se llama `Nombre_Line_0001`, sin `S01E01`. Una serie sigue `Nombre_S02E04_Line_0001`.
+- Un proyecto viejo sin este dato sigue como serie.
+
+### Archivos
+
+- `core/naming.py`
+- `gui_app.py`
+- `persistence/models.py`
+- `persistence/gui_bridge.py`
+- `persistence/store.py`
+- `docs/16-reporte-pelicula-o-serie.md`
+- `docs/TAREAS.md`
+
+Detalle: [16-reporte-pelicula-o-serie.md](16-reporte-pelicula-o-serie.md).

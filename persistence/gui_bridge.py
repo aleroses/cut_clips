@@ -42,14 +42,44 @@ def guess_series_name(video_path: str) -> str:
 
 def parse_season_episode(raw_title: str | None, *, default_season: int = 1) -> tuple[int, int]:
     """Extrae temporada y episodio de un título tipo S01E01."""
-    if raw_title:
-        match = re.search(r"[Ss](\d{1,2})[\s_.-]*[Ee](\d{1,2})", raw_title)
-        if match:
-            return int(match.group(1)), int(match.group(2))
-        match = re.search(r"[Ee]p(?:isode)?[\s_.-]*(\d{1,2})", raw_title)
-        if match:
-            return default_season, int(match.group(1))
+    found = find_season_episode(raw_title)
+    if found is not None:
+        season, episode = found
+        if season is None:
+            return default_season, episode
+        return season, episode
     return default_season, 1
+
+
+def find_season_episode(text: str | None) -> tuple[int | None, int] | None:
+    """Devuelve (temporada, episodio) si el texto trae SxxExx o Episode N.
+
+    Temporada None significa que solo había un número de episodio.
+    """
+    if not text:
+        return None
+    match = re.search(r"[Ss](\d{1,2})[\s_.-]*[Ee](\d{1,2})", text)
+    if match:
+        return int(match.group(1)), int(match.group(2))
+    match = re.search(r"[Ee]p(?:isode)?[\s_.-]*(\d{1,2})", text)
+    if match:
+        return None, int(match.group(1))
+    return None
+
+
+def resolve_media_kind(*texts: str | None) -> tuple[str, int, int]:
+    """Elige película o serie a partir del nombre de archivo y del título.
+
+    El primer texto que traiga SxxExx o Episode N gana. Si ninguno lo trae,
+    es una película y los números 1, 1 no se usan en el nombre.
+    """
+    for text in texts:
+        found = find_season_episode(text)
+        if found is None:
+            continue
+        season, episode = found
+        return "series", season or 1, episode
+    return "movie", 1, 1
 
 
 def parser_options_to_dict(options: ParserOptions) -> dict[str, Any]:
@@ -309,13 +339,19 @@ def build_project_from_gui(
     padding_end: float = 0.0,
     reference_alignment: dict | None = None,
     sequence_offset: int = 0,
+    media_kind: str = "series",
 ) -> Project:
     output_dir = "output_files"
     if video_path:
         output_dir = os.path.join(os.path.dirname(video_path), "output_files")
 
-    episode_label = format_episode_label(season, episode_num)
-    file_episode_label = format_episode_label(season, episode_num, style="compact")
+    if media_kind == "movie":
+        episode_label = ""
+        file_episode_label = ""
+    else:
+        media_kind = "series"
+        episode_label = format_episode_label(season, episode_num)
+        file_episode_label = format_episode_label(season, episode_num, style="compact")
     clips: list[Clip] = []
     clips_extra: dict[str, dict[str, float]] = {}
     internal_index = 0
@@ -360,6 +396,7 @@ def build_project_from_gui(
         video_track=video_track,
         padding_start=padding_start,
         padding_end=padding_end,
+        media_kind=media_kind,
         media_info=media_info,
         subtitles=cues_to_subtitle_cues(cue_map),
         clips=clips,
@@ -401,6 +438,7 @@ class LoadedGuiState:
     padding_end: float
     reference_alignment: dict | None
     sequence_offset: int | None = None
+    media_kind: str = "series"
 
 
 def load_gui_state_from_project(project: Project) -> LoadedGuiState:
@@ -447,4 +485,5 @@ def load_gui_state_from_project(project: Project) -> LoadedGuiState:
         padding_end=episode.padding_end,
         reference_alignment=reference_alignment,
         sequence_offset=infer_sequence_offset_from_clips(episode.clips),
+        media_kind=episode.media_kind or "series",
     )

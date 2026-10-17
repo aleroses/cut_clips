@@ -13,8 +13,15 @@ def format_episode_label(season, episode, style="legacy"):
 
 
 def clip_basename(series_name, episode_label, clip_id):
-    """Nombre base de un clip (sin extensión): {series}_{label}_Line_{id:04d}"""
-    return f"{series_name}_{episode_label}_Line_{clip_id:04d}"
+    """Nombre base de un clip (sin extensión).
+
+    Serie: {series}_{label}_Line_{id:04d}
+    Película (etiqueta vacía): {series}_Line_{id:04d}
+    """
+    line = f"Line_{clip_id:04d}"
+    if episode_label:
+        return f"{series_name}_{episode_label}_{line}"
+    return f"{series_name}_{line}"
 
 
 def clip_video_filename(series_name, episode_label, clip_id):
@@ -26,7 +33,14 @@ def clip_audio_filename(series_name, episode_label, clip_id):
 
 
 def tsv_filename(series_name, episode_label, episode_title=None):
-    """Nombre por defecto del TSV de Anki."""
+    """Nombre por defecto del TSV de Anki.
+
+    Una etiqueta vacía es una película: no se inserta S01E01 ni un guion bajo de más.
+    """
+    parts = [series_name]
+    if episode_label:
+        parts.append(episode_label)
     if episode_title:
-        return f"{series_name}_{episode_label}_{episode_title}_anki.tsv"
-    return f"{series_name}_{episode_label}_anki.tsv"
+        parts.append(episode_title)
+    parts.append("anki.tsv")
+    return "_".join(parts)

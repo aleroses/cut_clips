@@ -52,4 +52,8 @@ def load_project(path: str) -> Project:
 def default_project_path(series_name: str, episode_label: str, root_dir: str = ".") -> str:
     """Ruta sugerida para el archivo de proyecto de un episodio."""
     safe_series = series_name.replace(" ", "_") or "project"
-    return os.path.join(root_dir, f"{safe_series}_{episode_label}.anki-project.json")
+    if episode_label:
+        filename = f"{safe_series}_{episode_label}.anki-project.json"
+    else:
+        filename = f"{safe_series}.anki-project.json"
+    return os.path.join(root_dir, filename)

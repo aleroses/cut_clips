@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-10-16
 
-**Estado:** plan para revisar. El código de reproducción no se ha cambiado.
+**Estado:** no se aplica. El mp4 temporal se quitó; «Probar clip» volvió al bucle A–B del vídeo original. Ver [15-reporte-preview-sin-pausa.md](15-reporte-preview-sin-pausa.md).
 
 ## Qué se oye
 

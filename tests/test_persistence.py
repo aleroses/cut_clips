@@ -66,10 +66,15 @@ def test_missing_schema_version_defaults_to_one_and_unknown_version_is_rejected(
     assert project.episodes == []
 
     episode = Episode.from_dict({"season": 2, "episode": 3})
+    assert episode.media_kind == "series"
     assert episode.episode_label == "S02-Ep03"
     assert episode.padding_start == 0.0
     assert episode.output_dir == "output_files"
     assert episode.subtitle_track_index is None
+
+    movie = Episode.from_dict({"media_kind": "movie", "episode_label": "S01-Ep01"})
+    assert movie.media_kind == "movie"
+    assert movie.episode_label == ""
 
     with pytest.raises(ValueError, match="Versión de esquema no soportada"):
         Project.from_dict({"schema_version": 2, "episodes": []})

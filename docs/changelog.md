@@ -747,3 +747,29 @@ Detalle: [15-reporte-preview-sin-pausa.md](15-reporte-preview-sin-pausa.md).
 - `docs/TAREAS.md`
 
 Detalle: [16-reporte-pelicula-o-serie.md](16-reporte-pelicula-o-serie.md).
+
+---
+
+## Manifiesto solo para series, dentro de data
+
+**Fecha:** 2026-10-17
+
+### Qué se hizo
+
+- Una película no crea ni lee `series_manifest.json`.
+- Si el vídeo de una serie está dentro de `data`, el manifiesto se queda en esa carpeta.
+- El repositorio incluye `data/` vacía. Usarla para vídeos y clips es opcional.
+
+### Archivos
+
+- `persistence/series_manifest.py`
+- `gui_app.py`
+- `tests/test_series_manifest.py`
+- `.gitignore`
+- `data/.gitkeep`
+- `docs/04-gui.md`
+- `docs/17-reporte-manifiesto-serie.md`
+- `docs/TAREAS.md`
+- `README.md`
+
+Detalle: [17-reporte-manifiesto-serie.md](17-reporte-manifiesto-serie.md).

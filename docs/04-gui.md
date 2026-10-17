@@ -281,6 +281,12 @@ Cada vez que se quiera usar el programa hay que lanzar ese `python.exe`. No hay 
 
 Detalle del error de subtítulos ANSI/Windows-1252: [13-error-codificacion-srt.md](13-error-codificacion-srt.md).
 
+### Carpeta data (opcional)
+
+El repositorio incluye una carpeta `data/` vacía. Conviene guardar ahí el vídeo, el `.srt` y dejar que los clips salgan en `data/output_files/`. No es obligatorio: el programa abre un archivo en cualquier ruta.
+
+Si el vídeo de una serie está dentro de `data`, `series_manifest.json` se crea en esa carpeta y no en la raíz del proyecto. Una película no crea ese archivo. El contenido de `data/` (vídeos, subtítulos, clips, manifiesto) no se sube a git.
+
 ### Pasos en la interfaz
 
 1. **Archivo → Abrir vídeo…** — elige tu `.mkv` / `.mp4` / `.webm`.

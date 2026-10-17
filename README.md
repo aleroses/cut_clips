@@ -55,6 +55,8 @@ Set-Location D:\1-Learn\cut_clips
 
 Spanish step-by-step: [docs/04-gui.md](docs/04-gui.md). Open tasks: [docs/TAREAS.md](docs/TAREAS.md).
 
+The repository includes an empty `data/` folder. Putting the video, subtitles, and generated clips there is optional and recommended: the series numbering file stays inside `data` instead of the project root. Anything else you add under `data/` stays on your machine and is not committed.
+
 ## Installation
 
 ### 1. Install Python 3

@@ -1,6 +1,6 @@
 # Tareas
 
-Lista viva. Lo tachado ya está hecho. Lo demás sigue pendiente.
+Lista viva. Lo tachado ya está hecho o ya no hace falta. Lo demás sigue pendiente.
 
 ## Hechas
 
@@ -10,7 +10,13 @@ Lista viva. Lo tachado ya está hecho. Lo demás sigue pendiente.
 - ~~Investigar la pausa de «Probar clip» y dejar el plan escrito. Ver [14-plan-pausa-preview.md](14-plan-pausa-preview.md).~~
 - ~~Probar un mp4 temporal para quitar la pausa, y revertirlo: cada cambio de tiempos esperaba un encode y el programa podía cerrarse. «Probar clip» vuelve al bucle A–B del MKV original. Ver [15-reporte-preview-sin-pausa.md](15-reporte-preview-sin-pausa.md).~~
 - ~~Separar película y serie en el nombre de los archivos. Ver [16-reporte-pelicula-o-serie.md](16-reporte-pelicula-o-serie.md).~~
+- ~~No crear `series_manifest.json` para películas. En una serie, si el vídeo está en `data`, el manifiesto queda dentro de `data`. Ver [17-reporte-manifiesto-serie.md](17-reporte-manifiesto-serie.md).~~
+- ~~Dejar una carpeta `data/` vacía en el repositorio. Usarla para vídeos y clips es opcional. Ver [17-reporte-manifiesto-serie.md](17-reporte-manifiesto-serie.md).~~
+
+## Ya no hacen falta
+
+- ~~Revisar por qué las traducciones de Gemini no aparecían en el TSV.~~ Las traducciones sí se escriben en el TSV, así que ese repaso no hace falta.
 
 ## Pendientes
 
-- [ ] **Traducciones de Gemini que no aparecen en el TSV.** Hay API key de Gemini y las líneas generadas no muestran la traducción en el TSV. Revisar el flujo: la exportación automática escribe el TSV antes de que termine la traducción en segundo plano y solo reescribe si esa tarea acaba bien; sin proyecto guardado esa exportación automática no corre; el parseo de la respuesta numerada puede dejar la columna vacía; solo entran clips `exported` u `outdated`.
+Ninguna.

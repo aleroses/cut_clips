@@ -13,6 +13,50 @@ def series_manifest_path(series_dir: str) -> str:
     return os.path.join(series_dir, MANIFEST_FILENAME)
 
 
+def _norm(path: str) -> str:
+    return os.path.normcase(os.path.normpath(os.path.abspath(path)))
+
+
+def _is_within(path: str, root: str) -> bool:
+    path_n = _norm(path)
+    root_n = _norm(root)
+    if path_n == root_n:
+        return True
+    return path_n.startswith(root_n + os.sep)
+
+
+def enclosing_data_dir(path: str) -> str | None:
+    """Carpeta llamada data que contiene path, o None si no hay ninguna."""
+    current = os.path.abspath(path)
+    while True:
+        if os.path.basename(current).lower() == "data":
+            return current
+        parent = os.path.dirname(current)
+        if parent == current:
+            return None
+        current = parent
+
+
+def manifest_dir_for_episode(episode_dir: str, media_kind: str) -> str | None:
+    """Carpeta donde vive series_manifest.json, o None si no debe existir.
+
+    Una película no tiene capítulo siguiente, así que no usa manifiesto.
+    Si el vídeo está dentro de una carpeta data, el manifiesto no sale de ella.
+    Sin carpeta data, sigue en el directorio padre del episodio.
+    """
+    if media_kind == "movie":
+        return None
+    episode_dir = os.path.abspath(episode_dir)
+    parent = os.path.dirname(episode_dir)
+    if not parent or _norm(parent) == _norm(episode_dir):
+        data_dir = enclosing_data_dir(episode_dir)
+        return data_dir or episode_dir
+    data_dir = enclosing_data_dir(episode_dir)
+    if data_dir and not _is_within(parent, data_dir):
+        return data_dir
+    return parent
+
+
 def read_series_manifest(
     series_dir: str,
     *,

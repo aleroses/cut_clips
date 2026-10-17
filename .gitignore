@@ -11,8 +11,9 @@ env/
 # Caché de traducciones de DeepL
 **/translations_cache.json
 
-# Proyectos, vídeos, subtítulos y notas del usuario
-data/
+# Contenido del usuario en data/. La carpeta vacía sí se versiona.
+data/*
+!data/.gitkeep
 
 # Omitir archivos pesados o de salida por extensión (como respaldo)
 *.mkv

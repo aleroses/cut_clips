@@ -773,3 +773,40 @@ Detalle: [16-reporte-pelicula-o-serie.md](16-reporte-pelicula-o-serie.md).
 - `README.md`
 
 Detalle: [17-reporte-manifiesto-serie.md](17-reporte-manifiesto-serie.md).
+
+---
+
+## Evaluación para Android
+
+**Fecha:** 2026-10-17
+
+### Qué se hizo
+
+- Se descartó llevar la ventana de escritorio a Android.
+- El camino elegido es una app nueva en Kotlin, Jetpack Compose, Media3 y FFmpeg empaquetado.
+- El plan de actividades quedó en `D:\1-Learn\cut_clips_android`.
+
+### Archivos
+
+- `docs/18-evaluacion-android.md`
+- `docs/TAREAS.md`
+
+Detalle: [18-evaluacion-android.md](18-evaluacion-android.md).
+
+---
+
+## Cierre del escritorio
+
+**Fecha:** 2026-10-17
+
+### Qué se hizo
+
+- No quedan tareas abiertas en este repositorio.
+- El plan para seguir está en `D:\1-Learn\cut_clips_android`.
+
+### Archivos
+
+- `docs/19-informe-cierre.md`
+- `docs/TAREAS.md`
+
+Detalle: [19-informe-cierre.md](19-informe-cierre.md).

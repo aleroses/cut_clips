@@ -12,6 +12,7 @@ Lista viva. Lo tachado ya está hecho o ya no hace falta. Lo demás sigue pendie
 - ~~Separar película y serie en el nombre de los archivos. Ver [16-reporte-pelicula-o-serie.md](16-reporte-pelicula-o-serie.md).~~
 - ~~No crear `series_manifest.json` para películas. En una serie, si el vídeo está en `data`, el manifiesto queda dentro de `data`. Ver [17-reporte-manifiesto-serie.md](17-reporte-manifiesto-serie.md).~~
 - ~~Dejar una carpeta `data/` vacía en el repositorio. Usarla para vídeos y clips es opcional. Ver [17-reporte-manifiesto-serie.md](17-reporte-manifiesto-serie.md).~~
+- ~~Evaluar si cut_clips puede vivir en Android y dejar el plan de trabajo en otro repositorio. Ver [18-evaluacion-android.md](18-evaluacion-android.md). El backlog está en `D:\1-Learn\cut_clips_android\docs\PLAN.md`.~~
 
 ## Ya no hacen falta
 

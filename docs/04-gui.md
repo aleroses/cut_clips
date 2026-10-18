@@ -244,17 +244,15 @@ los clips ya generados pasan a **`[OUTDATED]`** (amarillo en la lista).
 
 ### Debian / Ubuntu
 
-Desde la raíz del proyecto:
+Desde la raíz del proyecto, con el entorno virtual ya creado y activado:
 
 ```bash
-cd /home/ale/Documents/projects/anki_video_tool
-pip install -r requirements.txt   # PySide6, python-mpv, deepl (opcional)
-sudo apt install ffmpeg libmpv2    # sistema: ffprobe, ffmpeg, mpv
-
+cd /ruta/a/cut_clips
+source .venv/bin/activate
 python3 gui_app.py
 ```
 
-El audio de la previsualización usa `pulse,pipewire,alsa`. libmpv llega por el paquete del sistema (`libmpv2` o `libmpv1`).
+El audio de la previsualización usa `pulse,pipewire,alsa`. libmpv llega por el paquete del sistema (`libmpv2` o `libmpv1`). La instalación del entorno y de esos paquetes está en el README.
 
 ### Windows
 
@@ -264,17 +262,17 @@ En Windows no hay `apt` ni `libmpv2`. Hacen falta, aparte del Python del proyect
 - La DLL de mpv en `%LOCALAPPDATA%\libmpv` (`libmpv-2.dll`, `mpv-2.dll` o `mpv-1.dll`). La aplicación añade esa carpeta sola antes de importar mpv.
 - El audio de la previsualización usa `wasapi`. No hace falta definir `ANKI_MPV_AO` ni ampliar el `PATH` en cada terminal.
 
-Desde PowerShell, en la raíz del proyecto y con el entorno virtual ya creado:
+Desde PowerShell, en la raíz del proyecto y con el entorno virtual ya creado. Cambia la ruta por la carpeta donde está el código:
 
 ```powershell
-Set-Location D:\1-Learn\cut_clips
+Set-Location D:\ruta\cut_clips
 .\.venv\Scripts\python.exe .\gui_app.py
 ```
 
 `Set-Location` solo hace falta para la ruta relativa `.\gui_app.py`. Desde otra carpeta:
 
 ```powershell
-D:\1-Learn\cut_clips\.venv\Scripts\python.exe D:\1-Learn\cut_clips\gui_app.py
+D:\ruta\cut_clips\.venv\Scripts\python.exe D:\ruta\cut_clips\gui_app.py
 ```
 
 Cada vez que se quiera usar el programa hay que lanzar ese `python.exe`. No hay que repetir variables de entorno. Si la DLL no está en `%LOCALAPPDATA%\libmpv`, hay que poner su carpeta en el `PATH` de esa sesión o mover la DLL a esa ruta.
@@ -283,9 +281,9 @@ Detalle del error de subtítulos ANSI/Windows-1252: [13-error-codificacion-srt.m
 
 ### Carpeta data (opcional)
 
-El repositorio incluye una carpeta `data/` vacía. Conviene guardar ahí el vídeo, el `.srt` y dejar que los clips salgan en `data/output_files/`. No es obligatorio: el programa abre un archivo en cualquier ruta.
+El repositorio incluye una carpeta `data/` vacía. Se puede trabajar y crear archivos dentro: el vídeo, un `.srt` si hace falta, los clips, el proyecto y el TSV. No es obligatorio. El programa abre y escribe en cualquier carpeta.
 
-Si el vídeo de una serie está dentro de `data`, `series_manifest.json` se crea en esa carpeta y no en la raíz del proyecto. Una película no crea ese archivo. El contenido de `data/` (vídeos, subtítulos, clips, manifiesto) no se sube a git.
+Si el vídeo de una serie está dentro de `data`, `series_manifest.json` se crea en esa carpeta y no en la raíz del proyecto. Una película no crea ese archivo. Git no sube el contenido de `data/`.
 
 ### Pasos en la interfaz
 
@@ -296,8 +294,8 @@ Si el vídeo de una serie está dentro de `data`, `series_manifest.json` se crea
    - Elige **pista de subtítulos embebida** (si la hay) o deja «Ninguno».
    - Pulsa **OK** (Cancelar no carga el vídeo).
 3. Carga subtítulos de una de estas formas:
-   - **Archivo → Extraer subtítulos del vídeo…** (si elegiste pista embebida en el paso 2).
-   - **Archivo → Abrir subtítulo (.srt)…** (archivo `.srt` externo).
+   - **Archivo → Extraer subtítulos del vídeo…** si en el paso 2 elegiste una pista de texto integrada. En ese caso no hace falta un `.srt` externo.
+   - **Archivo → Abrir subtítulo (.srt)…** si el vídeo no trae pista de texto, si la pista es de imagen (PGS, DVD) o si se prefiere un archivo aparte.
 4. Ajusta opciones de parseo (shift, idioma, etc.) y confirma.
 5. Selecciona una línea en la lista → **Probar clip** → edita tiempos → **Generar clip**.
 6. **Ctrl+S** o **Archivo → Guardar proyecto** para retomar más tarde.

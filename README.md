@@ -1,356 +1,171 @@
 # cut_clips
-A tool to cut video clips, translate subtitles, and generate TSV files ready for Anki import.
 
-`cut_clips` is designed to streamline language learning through audiovisual content. The tool processes video episodes to:
+Programa de escritorio para convertir un vídeo con subtítulos en material de estudio para Anki. Funciona en Debian y en Windows. La forma de abrirlo cambia según el sistema; el uso dentro de la ventana es el mismo.
 
-- Extract video and/or audio clips from subtitles.
-- Manually adjust timestamps and subtitle text before generating the clips.
-- Automatically translate subtitles into the target language using the DeepL API.
-- Generate a `.tsv` file compatible with Anki imports.
-- Maintain sequential clip numbering across multiple episodes.
+Abres un vídeo, cargas los subtítulos, ajustas cada frase, la escuchas en bucle y generas un clip de vídeo (`.webm`) y otro de audio (`.mp3`). Al final exportas un `.tsv` para importarlo en Anki.
 
-This makes it possible to turn an entire video episode into Anki study material with just a few steps.
+## Qué hace
 
-## Key Features
+- Abre `.mkv`, `.mp4` o `.webm` y muestra las pistas de vídeo, audio y subtítulos.
+- Si el vídeo trae subtítulos de texto integrados, se extraen desde la ventana y no hace falta un `.srt` externo. Un `.srt` aparte solo hace falta cuando el vídeo no trae pista de texto, o cuando se prefiere ese archivo. Acepta UTF-8, UTF-16, Windows-1252 y Latin-1. Los subtítulos de imagen (PGS, DVD) no se pueden extraer como texto: en ese caso sí hace falta un `.srt`.
+- Deja corregir el texto y los tiempos, unir frases, dividirlas, borrarlas y deshacer.
+- Previsualiza el tramo elegido en bucle sobre el vídeo original, sin crear un archivo.
+- Corta un clip o todos los pendientes. Cada clip sale en `.webm` (vídeo) y `.mp3` (audio), con los mismos tiempos.
+- Distingue película y serie. Una película se llama `Nombre_Line_0001`. Una serie se llama `Nombre_S01E01_Line_0001`. El capítulo siguiente de una serie continúa la numeración.
+- Traduce con DeepL o Gemini. La clave no se guarda dentro del proyecto.
+- Guarda el trabajo en un archivo `.anki-project.json` para retomarlo.
+- Exporta un `.tsv` de nueve columnas, listo para Anki, con el texto, la traducción y las referencias `[sound:...]`.
 
-- Precise video and audio clip cutting.
-- `.srt` subtitle processing.
-- Manual timestamp and subtitle text adjustment through a `.csv` file.
-- Automatic subtitle translation using the DeepL API.
-- Anki-compatible TSV generation.
-- Sequential clip numbering across episodes.
-- Translation caching to avoid translating the same content repeatedly.
+También quedan tres scripts de terminal, por si se prefiere el flujo por archivos: `inspect_media.py`, `parse_srt_preview.py` y `cut_clips.py`. La ventana cubre ese mismo recorrido.
 
-## Requirements
-
-You need the following:
+## Qué hace falta
 
 - Python 3
-- FFmpeg and ffprobe
-- Anki for importing the generated `.tsv` file
+- FFmpeg, con los comandos `ffmpeg` y `ffprobe`
+- libmpv, para ver el vídeo dentro de la ventana
 
-Optional:
+Opcional, solo si se va a traducir:
 
-- **DeepL** — automatic translation (`pip install deepl`); requires API key only when using `--translate`
-- **GUI** — PySide6, python-mpv, and system libmpv (see [Graphical editor](#graphical-editor-gui_apppy))
+- Una clave de DeepL o de Gemini
 
-Install Python dependencies:
+Anki (o AnkiDroid) hace falta al importar el `.tsv`, no para generar los clips.
 
-```bash
-pip install -r requirements.txt --break-system-packages
-```
+La guía larga de la ventana está en [docs/04-gui.md](docs/04-gui.md).
 
-On Debian/Ubuntu for GUI preview:
+## Instalar y abrir en Debian
 
-```bash
-sudo apt install ffmpeg libmpv2   # or libmpv1 depending on your release
-```
-
-On Windows, install FFmpeg so `ffmpeg` and `ffprobe` are on `PATH`, and put `libmpv-2.dll` in `%LOCALAPPDATA%\libmpv`. The GUI adds that folder itself and uses WASAPI for preview audio. From the project root:
-
-```powershell
-Set-Location D:\1-Learn\cut_clips
-.\.venv\Scripts\python.exe .\gui_app.py
-```
-
-Spanish step-by-step: [docs/04-gui.md](docs/04-gui.md). Open tasks: [docs/TAREAS.md](docs/TAREAS.md).
-
-The repository includes an empty `data/` folder. Putting the video, subtitles, and generated clips there is optional and recommended: the series numbering file stays inside `data` instead of the project root. Anything else you add under `data/` stays on your machine and is not committed.
-
-## Installation
-
-### 1. Install Python 3
-
-Check whether Python 3 is already installed:
+En la carpeta del proyecto:
 
 ```bash
-python3 --version
+cd /ruta/a/cut_clips
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+sudo apt install ffmpeg libmpv2
 ```
 
-If Python 3 is not installed, install it using your system's package manager.
+En algunas versiones el paquete se llama `libmpv1` en lugar de `libmpv2`.
 
-On Debian/Ubuntu:
-
-```bash
-sudo apt update
-sudo apt install python3 python3-pip
-```
-
-### 2. Install FFmpeg
-
-Check whether FFmpeg is already installed:
-
-```bash
-ffmpeg -version
-```
-
-On Debian/Ubuntu:
-
-```bash
-sudo apt update
-sudo apt install ffmpeg
-```
-
-### 3. Install the DeepL Python Library
-
-The project uses the official DeepL Python library to communicate with the DeepL API.
-
-Install it with:
-
-```bash
-pip install deepl --break-system-packages
-```
-
-> **Note:** On Debian-based systems, `--break-system-packages` may be required when installing Python packages globally with `pip`. Using a Python virtual environment is recommended if you want to avoid modifying the system Python environment.
-
-## Basic Structure
-
-```bash
-.
-├── core/                  # Shared logic (parser, clip engine, naming)
-├── media/                 # ffprobe analysis and subtitle extraction
-├── persistence/           # Project/episode/clip model (JSON save/load)
-├── docs/                  # Architecture, data model, changelog
-├── cut_clips.py           # CLI: CSV + video → clips + TSV
-├── parse_srt_preview.py   # CLI: SRT → preview CSV
-├── inspect_media.py       # CLI: analyze tracks, extract subtitles
-├── gui_app.py             # GUI: edit timings, preview, cut clips
-├── requirements.txt
-└── README.md
-```
-
-## 0. Inspect Media (recommended first step)
-
-Before extracting subtitles manually, analyze the video file:
-
-```bash
-python3 inspect_media.py "episode.mkv" --language en
-```
-
-This lists video, audio, and subtitle tracks with absolute and relative indexes,
-distinguishes text subtitles from image-based (PGS) tracks, and can extract SRT:
-
-```bash
-python3 inspect_media.py "episode.mkv" --extract-subtitle 2 -o S01E01.srt
-```
-
-Use the absolute stream index shown in the report (`abs=N`), not the relative audio index.
-
-## Graphical editor (gui_app.py)
-
-An experimental PySide6 GUI lets you review subtitle timings, preview segments
-with mpv (A–B loop), merge/delete lines, cut individual clips, and export TSV —
-without editing CSV in LibreOffice.
+Cada vez que se quiera usar el programa, desde esa misma carpeta y con el entorno ya activado:
 
 ```bash
 python3 gui_app.py
 ```
 
-Flow: **File → Open video** → review track dialog (ffprobe) →
-**Open subtitle (.srt)** or **Extract subtitles from video** (with parser options) →
-adjust times → **Cut** → **Export TSV**.
-
-Requires PySide6, python-mpv, and libmpv. Preview works without cutting; translation
-at export is optional (DeepL API key or `DEEPL_API_KEY` env var).
-
-## 1. Extract Subtitles and Create the Preview File
-
-Open a terminal in the directory containing the scripts and video file.
-
-First, select the episode you want to process:
+Si la terminal es nueva, primero hay que volver a activar el entorno:
 
 ```bash
-# Specify the episode
-EPISODE="S01E01"
-
-# Find the video file and store its name in a variable
-VIDEO1=$(ls Todd.McFarlanes.Spawn.${EPISODE}*.mkv)
-
-# Name of the preview CSV file
-CSV1="${EPISODE}_preview.csv"
-
-# Extract the subtitles from the corresponding track
-# Prefer inspect_media.py to find the correct stream index:
-#   python3 inspect_media.py "$VIDEO1" --extract-subtitle N -o "${EPISODE}.srt"
-ffmpeg -i "$VIDEO1" -map 0:2 "${EPISODE}.srt"
-
-# Create a CSV file for manually reviewing and correcting
-# subtitle timestamps and text
-python3 parse_srt_preview.py "${EPISODE}.srt" -o "$CSV1" --shift -0.4
+cd /ruta/a/cut_clips
+source .venv/bin/activate
+python3 gui_app.py
 ```
 
-The generated `.csv` file allows you to review the subtitles before creating the final clips.
+El audio de la previsualización usa PulseAudio, PipeWire o ALSA. No hay que definir variables de entorno.
 
-If a subtitle starts or ends too early or too late, you can manually adjust its timestamps in this file.
+## Instalar y abrir en Windows
 
-## 2. Generate Video + Audio Clips
+Hace falta, aparte de Python 3:
 
-To enable automatic translation, configure your DeepL API key:
+- FFmpeg instalado de forma que `ffmpeg` y `ffprobe` respondan en PowerShell.
+- La biblioteca de mpv en `%LOCALAPPDATA%\libmpv`. El archivo debe llamarse `libmpv-2.dll`, `mpv-2.dll` o `mpv-1.dll`. La ventana busca esa carpeta sola. No hay que añadirla al `PATH` en cada terminal.
+
+En PowerShell, en la carpeta del proyecto:
+
+```powershell
+Set-Location D:\ruta\cut_clips
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+Cada vez que se quiera abrir el programa:
+
+```powershell
+Set-Location D:\ruta\cut_clips
+.\.venv\Scripts\python.exe .\gui_app.py
+```
+
+`Set-Location` solo hace falta para la ruta relativa `.\gui_app.py`. Desde cualquier carpeta también vale la ruta completa:
+
+```powershell
+D:\ruta\cut_clips\.venv\Scripts\python.exe D:\ruta\cut_clips\gui_app.py
+```
+
+Sustituye `D:\ruta\cut_clips` por la carpeta donde está el código. El audio de la previsualización usa WASAPI. No hay que definir `ANKI_MPV_AO` ni tocar el `PATH` en cada sesión. Sí hay que lanzar ese `python.exe` cada vez: no queda un icono instalado.
+
+Si la ventana dice que no encuentra `libmpv-2.dll`, la DLL no está en `%LOCALAPPDATA%\libmpv`.
+
+## Cómo se usa
+
+1. **Archivo → Abrir vídeo…** y elige el `.mkv`, `.mp4` o `.webm`.
+2. En el análisis del archivo, elige la pista de audio y, si existe, la de subtítulos. **OK** carga el vídeo. **Cancelar** lo deja como estaba.
+3. Si en el paso anterior elegiste una pista de subtítulos de texto, **Archivo → Extraer subtítulos del vídeo…** crea las frases sin un `.srt` externo. Si el vídeo no trae esa pista, o trae solo subtítulos de imagen, usa **Archivo → Abrir subtítulo (.srt)…**. En los dos casos se puede desplazar o recortar el tiempo de todas las frases antes de crearlas.
+4. Elige **Película** o **Serie**. En una serie aparecen la temporada y el episodio. Si el nombre del archivo trae `S01E01` o `Episode 2`, el programa propone serie. Si no, propone película. Se puede cambiar a mano.
+5. Elige una frase. **Probar clip** la repite entre el inicio y el final. Ajusta los tiempos y pulsa **Aplicar tiempos** para guardarlos en esa frase. El texto se guarda al escribirlo.
+6. **Generar clip** crea el `.webm` y el `.mp3` de la frase elegida. **Generar todos pendientes** hace el resto y se puede cancelar.
+7. Si quieres traducción, elige DeepL o Gemini, pega la clave y traduce antes de exportar. La clave puede quedar en un archivo de tu usuario (`~/.config/anki_video_tool/`). No entra en el proyecto ni en git.
+8. **Archivo → Exportar TSV…** escribe el archivo para Anki. Solo entran los clips ya generados.
+9. **Archivo → Guardar proyecto** deja un `.anki-project.json` para seguir otro día. Al volver, **Archivo → Abrir proyecto…**.
+
+Atajos con el foco fuera de un campo de texto: `Espacio` pausa o sigue, `←` y `→` saltan un segundo, `Ctrl+Z` deshace y `Ctrl+Mayús+Z` rehace. `Ctrl+S` guarda el proyecto.
+
+En un vídeo H.264, **Probar clip** puede mostrar una pausa breve al entrar y al repetir. El `.webm` y el `.mp3` generados no tienen esa pausa: el reproductor de la ventana tiene que saltar dentro del archivo original, y los clips ya cortados empiezan en el punto justo.
+
+## Carpeta data
+
+El repositorio incluye una carpeta `data/` vacía. Ahí se puede guardar el vídeo, el `.srt` si se usa uno, y dejar que el programa cree los clips, el proyecto y el TSV, por ejemplo en `data/output_files/`. Trabajar dentro de `data/` no es obligatorio: el programa abre y escribe archivos en cualquier carpeta que elijas.
+
+Si el vídeo de una serie está dentro de `data`, el archivo `series_manifest.json` (el último número de clip, para el capítulo siguiente) se crea dentro de `data`. Una película no crea ese archivo. Git ignora lo que se añada en `data/` (vídeos, subtítulos, clips, proyectos y el manifiesto). Solo se versiona la carpeta vacía, para que exista al clonar el repositorio.
+
+## Línea de comandos
+
+Los tres scripts usan el mismo Python del entorno. En Debian, con el entorno activado, el comando es `python3`. En Windows es `.\.venv\Scripts\python.exe`.
+
+Ver pistas y extraer un subtítulo de texto:
 
 ```bash
-# DEEPL API
-export DEEPL_API_KEY="Replace this with your API key"
+python3 inspect_media.py "episodio.mkv" --language en
+python3 inspect_media.py "episodio.mkv" --extract-subtitle 2 -o episodio.srt
+```
 
-# Generar clips (video + audio)
+El número de `--extract-subtitle` es el índice absoluto que muestra el informe (`abs=N`).
+
+Pasar el `.srt` a un CSV revisable y cortar:
+
+```bash
+python3 parse_srt_preview.py episodio.srt -o episodio.csv
+
 python3 cut_clips.py \
-  --video "$VIDEO1" \
-  --csv "$CSV1" \
-  --series-name Todd_McFarlanes_Spawn_Anki_Video \
+  --video episodio.mkv \
+  --csv episodio.csv \
+  --series-name Nombre_Serie \
   --episode-label S01-Ep01 \
-  --media both \
-  --translate \
-  --limit 5
+  --media both
 ```
 
-The `--limit 5` option is useful for testing the process with a small number of clips before processing the entire episode.
+`--media audio` genera solo `.mp3`. `--media video` genera solo `.webm`. `--limit 5` corta las cinco primeras frases. `--translate` usa DeepL y lee la clave de `DEEPL_API_KEY`. `--start-index` continúa la numeración de un episodio anterior. En la ventana, esa continuación la hace `series_manifest.json` y no hace falta calcular el índice a mano.
 
-Once you have verified that the clips are generated correctly, increase the `--limit` value to continue processing the episode.
-
-### Notes
-
-- A valid DeepL API key is required for automatic translation.
-- To process more clips, increase the value of `--limit 5` or remove the limit according to the options supported by the program.
-- It is recommended to test the process with a small number of clips before processing an entire episode.
-
-☣️☢️ Important 🔥☠️
-
-You must change the names of the files listed in the commands to be executed, depending on your specific situation.
-
-## 3. Continue the Numbering from the Next Episode
-
-After finishing an episode, you can retrieve the ID of the last generated clip:
-
-```bash
-# Get the ID of the last generated clip
-tail -n1 Todd_McFarlanes_Spawn_Anki_Video_S01-Ep01_anki.tsv | cut -f1
-
-# Get the ID of the last generated clip
-LAST_ID=$(tail -n1 Todd_McFarlanes_Spawn_Anki_Video_S01-Ep01_anki.tsv | cut -f1)
-
-# Calculate the next ID
-NEXT_START=$((10#$LAST_ID + 1))
-echo $NEXT_START
-```
-
-> **Note:** If this is the first episode you are processing, `--start-index` is not required.
-
-## 4. Process the Next Episode
-
-For example, to process episode `S01E02`:
-
-```bash
-# Specify the episode
-EPISODE="S01E02"
-
-# Find the video file
-VIDEO2=$(ls Todd.McFarlanes.Spawn.${EPISODE}*.mkv)
-
-# Name of the preview CSV file
-CSV2="${EPISODE}_preview.csv"
-
-# Extract the subtitles
-ffmpeg -i "$VIDEO2" -map 0:2 "${EPISODE}.srt"
-
-# Create the CSV for manually reviewing and correcting
-# subtitle timestamps and text
-python3 parse_srt_preview.py "${EPISODE}.srt" -o "$CSV2" --shift -0.4
-```
-
-Then generate the clips:
-
-```bash
-# DEEPL API para traducir texto
-export DEEPL_API_KEY="Replace this with your API key"
-
-# Generar clips (video + audio)
-python3 cut_clips.py \
-  --video "$VIDEO2" \
-  --csv "$CSV2" \
-  --series-name Todd_McFarlanes_Spawn_Anki_Video \
-  --episode-label S01-Ep02 \
-  --start-index $NEXT_START \
-  --media both \
-  --translate \
-  --limit 5
-```
-
-The `--start-index` option allows the clip numbering to continue from the previous episode.
-
-## 5. Generate Audio Only
-
-If you only need audio files, use `--media audio`:
-
-```bash
-python3 cut_clips.py \
-  --video "Todd.McFarlanes.Spawn.S01E01.1080p.HMAX.WEB-DL.DD2.0.H.264-SLiGNOME.mkv" \
-  --csv S01E01_preview.csv \
-  --series-name Todd_McFarlanes_Spawn_Anki_Video \
-  --episode-label S01-Ep01 \
-  --media audio
-```
-
-## 6. Fixing an Incorrectly Generated Clip
-
-If a clip was not generated correctly:
-
-1. Delete the corresponding clip from the `output_files` directory.
-2. Open the `.csv` file.
-3. Manually correct the timestamps or subtitle text.
-4. Run the generation command again.
-
-There is no need to regenerate clips that are already correct.
-
-## Project Structure After Processing
-
-After processing an episode, the directory structure will look similar to this:
-
-```bash
-.
-├── cut_clips.py
-├── episodio_info.json
-├── output_files 👈🏼👀👇🏼
-│   ├── Todd_McFarlanes_Spawn_Anki_Video_S01-Ep01_Line_0001.webm
-│   ├── Todd_McFarlanes_Spawn_Anki_Video_S01-Ep01_Line_0002.webm
-│   ├── Todd_McFarlanes_Spawn_Anki_Video_S01-Ep01_Line_0003.webm
-│   ├── Todd_McFarlanes_Spawn_Anki_Video_S01-Ep01_Line_.....webm
-│   ├── Todd_McFarlanes_Spawn_Anki_Video_S01-Ep01_Line_.....webm
-│   ├── Todd_McFarlanes_Spawn_Anki_Video_S01-Ep01_Line_0048.webm
-│   ├── Todd_McFarlanes_Spawn_Anki_Video_S01-Ep01_Line_0049.webm
-│   └── Todd_McFarlanes_Spawn_Anki_Video_S01-Ep01_Line_0050.webm
-├── parse_srt_preview.py
-├── S01E01_preview.csv
-├── S01E01.srt
-├── Todd_McFarlanes_Spawn_Anki_Video_S01-Ep01_anki.tsv
-├── Todd_McFarlanes_Spawn_Anki_Video_translations_cache.json
-└── Todd.McFarlanes.Spawn.S01E01.1080p.HMAX.WEB-DL.DD2.0.H.264-SLiGNOME.mkv
-```
-
-## Workflow
-
-The overall workflow is:
+## Estructura
 
 ```text
-Video (.mkv)
-     │
-     ▼
-Subtitles (.srt)
-     │
-     ▼
-Preview and manual correction
-     │
-     ▼
-CSV (.csv)
-     │
-     ├──────────────► DeepL Translation
-     │
-     ▼
-Clip generation
-     │
-     ├──► Video (.webm)
-     └──► Audio
-     │
-     ▼
-TSV for Anki
+.
+├── gui_app.py              # Ventana principal
+├── cut_clips.py            # Corte y TSV desde un CSV
+├── parse_srt_preview.py    # SRT → CSV
+├── inspect_media.py        # Pistas y extracción de subtítulos
+├── core/                   # Subtítulos, corte, nombres
+├── media/                  # ffprobe
+├── persistence/            # Proyecto JSON y manifiesto de serie
+├── ui/                     # Diálogos y reproductor
+├── data/                   # Vacía en git; lugar opcional de trabajo
+├── docs/                   # Guías y notas de cada cambio
+└── requirements.txt
 ```
 
-The generated TSV file contains the information required to import the clips and text into Anki.
+## Más documentación
+
+- Ventana, Debian y Windows: [docs/04-gui.md](docs/04-gui.md)
+- Modelo del proyecto: [docs/03-data-model.md](docs/03-data-model.md)
+- Subtítulos que no son UTF-8: [docs/13-error-codificacion-srt.md](docs/13-error-codificacion-srt.md)
+- Película o serie: [docs/16-reporte-pelicula-o-serie.md](docs/16-reporte-pelicula-o-serie.md)
+- Dónde se guarda la numeración de una serie: [docs/17-reporte-manifiesto-serie.md](docs/17-reporte-manifiesto-serie.md)
+- Historial: [docs/changelog.md](docs/changelog.md)

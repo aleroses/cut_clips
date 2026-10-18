@@ -810,3 +810,23 @@ Detalle: [18-evaluacion-android.md](18-evaluacion-android.md).
 - `docs/TAREAS.md`
 
 Detalle: [19-informe-cierre.md](19-informe-cierre.md).
+
+---
+
+## README para Debian y Windows
+
+**Fecha:** 2026-10-17
+
+### Qué se hizo
+
+- El README explica qué hace el programa y cómo abrirlo en Debian y en Windows, con comandos distintos.
+- Si el vídeo trae subtítulos de texto, no hace falta un `.srt` externo.
+- La carpeta `data/` sirve para trabajar y crear archivos, y no es obligatoria.
+- La guía de la ventana deja de usar rutas de una máquina concreta.
+
+### Archivos
+
+- `README.md`
+- `docs/04-gui.md`
+
+Detalle: [04-gui.md](04-gui.md).

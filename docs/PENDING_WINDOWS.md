@@ -23,6 +23,7 @@ Temporada y episodio solo se ven en Serie.
 | `1116710` | Lee un SRT en UTF-8 (con o sin BOM), UTF-16 con BOM, Windows-1252 o Latin-1. El parseo de un archivo UTF-8 no cambia. | `core/subtitle_parser.py`, `tests/test_subtitle_encoding.py` |
 | add subtitle text cleaning helpers | Limpia etiquetas, anotaciones SDH, anuncios y mayúsculas del texto de un subtítulo. | `core/subtitle_text.py`, `tests/test_subtitle_text.py` |
 | load an external srt as timed reference cues | Lee un SRT externo a bloques con inicio, fin y texto limpio, en UTF-8 o Windows-1252. | `core/subtitle_text.py`, `tests/test_reference_cues.py` |
+| find reference text by clip time range | El texto de referencia de un clip es el de los bloques que solapan su intervalo, con 0.5 s de tolerancia. | `core/subtitle_text.py`, `tests/test_reference_cues.py` |
 
 ## Pendiente, todavía no implementado
 

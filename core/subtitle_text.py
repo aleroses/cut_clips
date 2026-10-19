@@ -8,6 +8,8 @@ from core.subtitle_parser import clean_text, normalize_case, parse_srt_blocks
 _MARKUP_RE = re.compile(r"</?(?:i|b|font)\b[^>]*>", re.IGNORECASE)
 _URL_LINE_RE = re.compile(r"^(?:https?://|www\.)\S+$", re.IGNORECASE)
 
+REFERENCE_MATCH_TOLERANCE_SEC = 0.5
+
 
 def _is_ad_line(text: str) -> bool:
     if "opensubtitles" in text.casefold():
@@ -46,3 +48,23 @@ def load_reference_cues(path, language: str = "en") -> list[dict]:
             "text": text,
         })
     return cues
+
+
+def reference_text_for_range(
+    cues,
+    start: float,
+    end: float,
+    tolerance: float = REFERENCE_MATCH_TOLERANCE_SEC,
+) -> str:
+    """Texto limpio de los bloques que solapan [start - tol, end + tol]."""
+    window_start = start - tolerance
+    window_end = end + tolerance
+    parts = []
+    for cue in cues:
+        cue_start = float(cue["start"])
+        cue_end = float(cue["end"])
+        if cue_start <= window_end and cue_end >= window_start:
+            text = str(cue.get("text") or "").strip()
+            if text:
+                parts.append(text)
+    return " ".join(parts)

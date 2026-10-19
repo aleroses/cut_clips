@@ -29,6 +29,34 @@ def seconds_to_timestamp(total_seconds):
     return f"{hours:02d}:{minutes:02d}:{seconds:06.3f}"
 
 
+def read_subtitle_text(path):
+    """Lee un .srt y devuelve (texto, codificación).
+
+    Muchos subtítulos de releases antiguos están en Windows-1252 (a veces
+    llamado ANSI), no en UTF-8. El byte 0xE8 es la letra «è»: en UTF-8 ese
+    byte abre un carácter de 3 bytes y Python aborta con
+    «invalid continuation byte» si el archivo no es UTF-8.
+
+    Orden: UTF-8 (con o sin BOM), UTF-16 si hay BOM, Windows-1252 y, al
+    final, Latin-1, que acepta cualquier byte.
+    """
+    with open(path, "rb") as f:
+        data = f.read()
+
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return data.decode("utf-16"), "utf-16"
+
+    for encoding in ("utf-8-sig", "cp1252"):
+        try:
+            text = data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+        used = "utf-8" if encoding == "utf-8-sig" else encoding
+        return text, used
+
+    return data.decode("latin-1"), "latin-1"
+
+
 def parse_srt_blocks(path, offset=0.0, scale=1.0):
     """Devuelve una lista de dicts: {start, end, raw_text} por bloque SRT.
 
@@ -42,8 +70,7 @@ def parse_srt_blocks(path, offset=0.0, scale=1.0):
     NOTA: por ahora solo soporta formato .srt (separador ',' en los ms).
     Soporte para .vtt se agregará en una fase posterior.
     """
-    with open(path, encoding="utf-8-sig") as f:
-        content = f.read()
+    content, _encoding = read_subtitle_text(path)
 
     raw_blocks = re.split(r'\n\s*\n', content.strip())
     blocks = []

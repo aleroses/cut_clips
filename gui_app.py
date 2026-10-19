@@ -98,7 +98,11 @@ from persistence.gui_bridge import (
     resolve_media_kind,
 )
 from persistence.store import default_project_path, load_project, save_project
-from persistence.series_manifest import read_series_manifest, write_series_manifest
+from persistence.series_manifest import (
+    manifest_dir_for_episode,
+    read_series_manifest,
+    write_series_manifest,
+)
 
 try:
     import mpv
@@ -3247,6 +3251,7 @@ class MainWindow(QMainWindow):
             )
         self._media_kind = new_kind
         self._sync_media_kind_controls()
+        self._invalidate_series_sequence_cache()
         self._mark_project_modified()
 
     def _computed_tsv_basename(self) -> str:
@@ -3298,11 +3303,10 @@ class MainWindow(QMainWindow):
         return os.path.abspath(".")
 
     def _series_dir(self) -> str | None:
-        episode_dir = self._episode_workspace_dir()
-        parent = os.path.dirname(episode_dir)
-        if not parent or os.path.normpath(parent) == os.path.normpath(episode_dir):
-            return None
-        return parent
+        return manifest_dir_for_episode(
+            self._episode_workspace_dir(),
+            self._media_kind,
+        )
 
     def _local_export_sequence_number(self, seg_id: int) -> int:
         """Posición 1-based entre segmentos activos, en orden de self.segments."""
@@ -3322,7 +3326,12 @@ class MainWindow(QMainWindow):
         (Line_N - posición local) y no vuelve a sumarse el manifest.
         Si todavía no hay exports, el offset es last_sequence_number del
         manifest en la carpeta padre, o 0 si no existe.
+        Una película no lee ese archivo.
         """
+        if self._media_kind == "movie":
+            if self._sequence_offset_from_exports is not None:
+                return self._sequence_offset_from_exports
+            return 0
         if self._series_sequence_offset_cache is not None:
             return self._series_sequence_offset_cache
         if self._sequence_offset_from_exports is not None:

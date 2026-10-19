@@ -13,6 +13,21 @@ def series_manifest_path(series_dir: str) -> str:
     return os.path.join(series_dir, MANIFEST_FILENAME)
 
 
+def manifest_dir_for_episode(episode_dir: str, media_kind: str) -> str | None:
+    """Carpeta del manifiesto, o None si este episodio no debe usarlo.
+
+    Una película no tiene capítulo siguiente. Una serie sigue usando el
+    directorio padre del episodio, igual que antes.
+    """
+    if media_kind == "movie":
+        return None
+    episode_dir = os.path.abspath(episode_dir)
+    parent = os.path.dirname(episode_dir)
+    if not parent or os.path.normpath(parent) == os.path.normpath(episode_dir):
+        return None
+    return parent
+
+
 def read_series_manifest(
     series_dir: str,
     *,

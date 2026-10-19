@@ -52,6 +52,37 @@ def parse_season_episode(raw_title: str | None, *, default_season: int = 1) -> t
     return default_season, 1
 
 
+def find_season_episode(text: str | None) -> tuple[int | None, int] | None:
+    """Devuelve (temporada, episodio) si el texto trae SxxExx o Episode N.
+
+    Temporada None significa que solo había un número de episodio.
+    """
+    if not text:
+        return None
+    match = re.search(r"[Ss](\d{1,2})[\s_.-]*[Ee](\d{1,2})", text)
+    if match:
+        return int(match.group(1)), int(match.group(2))
+    match = re.search(r"[Ee]p(?:isode)?[\s_.-]*(\d{1,2})", text)
+    if match:
+        return None, int(match.group(1))
+    return None
+
+
+def resolve_media_kind(*texts: str | None) -> tuple[str, int, int]:
+    """Elige película o serie a partir del nombre de archivo y del título.
+
+    El primer texto que traiga SxxExx o Episode N gana. Si ninguno lo trae,
+    es una película y los números 1, 1 no se usan en el nombre.
+    """
+    for text in texts:
+        found = find_season_episode(text)
+        if found is None:
+            continue
+        season, episode = found
+        return "series", season or 1, episode
+    return "movie", 1, 1
+
+
 def parser_options_to_dict(options: ParserOptions) -> dict[str, Any]:
     return options.as_generate_kwargs()
 

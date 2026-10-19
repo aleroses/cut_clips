@@ -19,13 +19,15 @@ Temporada y episodio solo se ven en Serie.
 | `4777a41` | Cambiar el modo con clips ya generados pide confirmación. Esos clips conservan su ruta y el TSV existente no cambia de nombre. | `core/naming.py`, `gui_app.py`, `persistence/gui_bridge.py`, `tests/test_media_kind.py` |
 | `67f3012` | Una película no lee ni escribe `series_manifest.json`. Una serie sigue usando la carpeta padre del episodio. | `persistence/series_manifest.py`, `gui_app.py`, `tests/test_series_manifest.py` |
 | `c40e0d8` | Reconstruye `series_manifest.json` con los mismos dos campos, en dry-run salvo `--apply`. | `tools/rebuild_series_manifest.py`, `tests/test_rebuild_series_manifest.py`, `docs/20-rebuild-series-manifest.md` |
+| `02d6cb3` | Tras eliminar, fusionar o dividir, el editor y el bucle de mpv pasan al clip que queda. Si no queda ninguno, los campos se vacían y Probar/Generar se deshabilitan. | `gui_app.py`, `core/segment_selection.py`, `tests/test_segment_selection.py` |
 
 ## Pendiente, todavía no implementado
 
-- Manifiesto de serie dentro de una carpeta llamada `data/`. En `debian` el manifiesto sigue en la carpeta padre del episodio.
-- Escape de campos del TSV con `csv.writer`.
-- Lectura de SRT en Windows-1252 y UTF-16, además de UTF-8.
-- «Cargar externo» con un segundo archivo SRT.
+- Manifiesto de serie dentro de una carpeta llamada `data/` (regla de portability, aún no portada). En `debian` el manifiesto sigue en la carpeta padre del episodio.
+- «Cargar externo»: hoy un `.srt` se guarda como texto plano con índices y tiempos mezclados (`gui_reference_map.cue_reference_text`), lo que genera diferencias falsas. Reutilizar `core/subtitle_parser.py` y aceptar un segundo SRT para comparar. Primero el análisis, sin implementarlo todavía.
+- Opcional: ofrecer ocultar o filtrar líneas sin audio, del tipo «Captions made possible by...», al abrir un vídeo.
+- Escape de campos del TSV con `csv.writer`, y lectura de SRT en Windows-1252 y UTF-16 además de UTF-8.
+- Paso 7: apartado de nombres película/serie en `docs/04-gui.md` y `docs/changelog.md`.
 - Rediseño oscuro de la ventana, con iconos.
 
 Cada commit nuevo de funcionalidad en `debian` debe añadir aquí su hash y sus archivos.

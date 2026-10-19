@@ -2,7 +2,7 @@
 
 import re
 
-from core.subtitle_parser import clean_text, normalize_case
+from core.subtitle_parser import clean_text, normalize_case, parse_srt_blocks
 
 
 _MARKUP_RE = re.compile(r"</?(?:i|b|font)\b[^>]*>", re.IGNORECASE)
@@ -31,3 +31,18 @@ def clean_subtitle_text(raw_text: str, language: str = "en") -> str:
     if not cleaned or _is_ad_line(cleaned):
         return ""
     return normalize_case(cleaned, language=language)
+
+
+def load_reference_cues(path, language: str = "en") -> list[dict]:
+    """Lee un SRT externo y devuelve bloques con inicio, fin y texto limpio."""
+    cues = []
+    for block in parse_srt_blocks(path):
+        text = clean_subtitle_text(block["raw_text"], language=language)
+        if not text:
+            continue
+        cues.append({
+            "start": block["start"],
+            "end": block["end"],
+            "text": text,
+        })
+    return cues

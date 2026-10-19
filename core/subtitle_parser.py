@@ -160,16 +160,14 @@ def fix_punctuation_spacing(text: str) -> str:
     return _restore_html_tags(protected, tags)
 
 
-def normalize_case(text, language="en"):
-    """ALL CAPS -> sentence case, SOLO si el texto realmente está en
-    mayúsculas (ver is_mostly_uppercase). Si ya viene en case normal, se
-    devuelve sin tocar.
+def apply_sentence_case(text, language="en"):
+    """Minúsculas y luego mayúscula de frase, más el pronombre I en inglés.
 
-    language: la regla de capitalizar el pronombre "i" -> "I" es
-    específica del inglés y solo se aplica cuando language == "en".
-    Limitación conocida: nombres propios quedarán en minúscula salvo que
-    empiecen oración; se puede mejorar luego con una lista de excepciones."""
-    if not is_mostly_uppercase(text):
+    Es el mismo paso que usa normalize_case cuando el texto va en mayúsculas,
+    sin esperar a que casi todas las letras lo estén. Un «Screw» suelto en
+    medio de una frase queda en «screw».
+    """
+    if not text:
         return text
 
     text, html_tags = _protect_html_tags(text)
@@ -187,6 +185,20 @@ def normalize_case(text, language="en"):
 
     text = re.sub(r"(^|[.!?]\s+)([a-zà-ÿ])", cap, text)
     return _restore_html_tags(text, html_tags)
+
+
+def normalize_case(text, language="en"):
+    """ALL CAPS -> sentence case, SOLO si el texto realmente está en
+    mayúsculas (ver is_mostly_uppercase). Si ya viene en case normal, se
+    devuelve sin tocar.
+
+    language: la regla de capitalizar el pronombre "i" -> "I" es
+    específica del inglés y solo se aplica cuando language == "en".
+    Limitación conocida: nombres propios quedarán en minúscula salvo que
+    empiecen oración; se puede mejorar luego con una lista de excepciones."""
+    if not is_mostly_uppercase(text):
+        return text
+    return apply_sentence_case(text, language=language)
 
 
 def apply_boundary_trim(start, end, trim_start, trim_end, min_duration=0.3):

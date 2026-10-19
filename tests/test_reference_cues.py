@@ -3,6 +3,7 @@
 from persistence.gui_bridge import reference_alignment_from_dict
 from core.subtitle_text import (
     REFERENCE_MATCH_TOLERANCE_SEC,
+    align_reference_to_clip,
     load_reference_cues,
     reference_differences,
     reference_text_for_range,
@@ -139,3 +140,83 @@ def test_invalid_reference_cues_are_ignored():
     })
     assert "reference_cues" not in restored
     assert restored["cue_reference_text"][0] == "viejo"
+
+
+SPAWN_CLIP = (
+    "Do the things we do in this life screw you in the one "
+    "that comes after? I think so."
+)
+SPAWN_EXTERNAL = (
+    "Strike a match and a fire starts. Do the things we do in this life "
+    "Screw you in the one that comes after? I think so. "
+    "Spawn's learning that little lesson too."
+)
+
+
+def test_aligns_the_spawn_sentence():
+    cues = [{"start": 1.0, "end": 5.0, "text": SPAWN_EXTERNAL}]
+    assert align_reference_to_clip(SPAWN_CLIP, cues, 1.0, 5.0) == SPAWN_CLIP
+
+
+def test_trims_text_before_and_after_the_clip():
+    clip = "Hello there friend."
+    cues = [{"start": 1.0, "end": 2.0, "text": "Well hello there friend. today"}]
+    assert align_reference_to_clip(clip, cues, 1.0, 2.0) == "Hello there friend."
+
+
+def test_one_different_word_stays_inside_the_trim():
+    clip = "Do the things we do"
+    cues = [{"start": 1.0, "end": 2.0, "text": "noise Do the stuff we do tail"}]
+    assert align_reference_to_clip(clip, cues, 1.0, 2.0) == "Do the stuff we do"
+
+
+def test_single_word_clip():
+    cues = [{"start": 1.0, "end": 2.0, "text": "Well hello there."}]
+    assert align_reference_to_clip("Hello", cues, 1.0, 2.0) == "Hello"
+
+
+def test_align_without_overlap_is_empty():
+    cues = [{"start": 10.0, "end": 11.0, "text": "Hello there"}]
+    assert align_reference_to_clip("Hello there", cues, 1.0, 2.0) == ""
+
+
+def test_align_keeps_accents_and_enie():
+    clip = "El niño está aquí."
+    cues = [{"start": 1.0, "end": 2.0, "text": "Mira, el niño está aquí. ahora"}]
+    assert align_reference_to_clip(clip, cues, 1.0, 2.0) == "El niño está aquí."
+
+
+def test_align_keeps_apostrophes():
+    clip = "You're hearing Spawn's lesson."
+    cues = [{
+        "start": 1.0,
+        "end": 2.0,
+        "text": "Well you're hearing Spawn's lesson. now",
+    }]
+    assert align_reference_to_clip(clip, cues, 1.0, 2.0) == (
+        "You're hearing spawn's lesson."
+    )
+    curly = [{"start": 1.0, "end": 2.0, "text": "You\u2019re fine. today"}]
+    assert align_reference_to_clip("You're fine.", curly, 1.0, 2.0) == (
+        "You\u2019re fine."
+    )
+
+
+def test_neighbor_block_supplies_the_rest_of_the_clip():
+    clip = "Hello there"
+    cues = [
+        {"start": 0.0, "end": 0.4, "text": "Well"},
+        {"start": 1.0, "end": 2.0, "text": "hello"},
+        {"start": 2.5, "end": 3.0, "text": "there now"},
+    ]
+    assert align_reference_to_clip(clip, cues, 1.0, 2.0) == "Hello there"
+
+
+def test_low_match_returns_the_time_window_without_neighbors():
+    clip = "alpha beta gamma delta"
+    cues = [
+        {"start": 0.0, "end": 0.4, "text": "before"},
+        {"start": 1.0, "end": 2.0, "text": "alpha other words here"},
+        {"start": 3.0, "end": 4.0, "text": "after"},
+    ]
+    assert align_reference_to_clip(clip, cues, 1.0, 2.0) == "alpha other words here"

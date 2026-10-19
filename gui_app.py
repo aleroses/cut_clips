@@ -68,7 +68,12 @@ from core.clip_engine import (
     sanitize_filename_component, run_batch, BatchCancelToken, MIN_DURATION,
 )
 from core.naming import (
-    clip_audio_filename, clip_video_filename, format_episode_label, tsv_filename,
+    choose_tsv_basename,
+    clip_audio_filename,
+    clip_video_filename,
+    format_episode_label,
+    tsv_filename,
+    tsv_lock_after_mode_change,
 )
 from core.reference_alignment import align_reference_text
 from media.probe import (
@@ -534,6 +539,7 @@ class MainWindow(QMainWindow):
         self._season = 1
         self._episode_num = 1
         self._media_kind = "series"
+        self._locked_tsv_basename: str | None = None
         self._project_root_dir = "."
         self._series_sequence_offset_cache: int | None = None
         self._sequence_offset_from_exports: int | None = None
@@ -824,6 +830,7 @@ class MainWindow(QMainWindow):
         self._update_cues_detail(None)
         self._set_reference_panel_visible(False)
         self._reset_series_sequence_state()
+        self._locked_tsv_basename = None
         self._refresh_list()
 
     def _apply_loaded_project_state(self, state, project_path: str):
@@ -1845,6 +1852,7 @@ class MainWindow(QMainWindow):
             self._sync_media_kind_controls()
             self.episode_title = extract_episode_title(raw_title) or ""
             self._project_path = None
+            self._locked_tsv_basename = None
             self._project_root_dir = os.path.dirname(os.path.abspath(path)) or "."
             self._reset_series_sequence_state()
 
@@ -3211,9 +3219,52 @@ class MainWindow(QMainWindow):
         self.episode_spin.setVisible(show_series)
 
     def _on_media_kind_changed(self):
-        self._media_kind = self.media_kind_combo.currentData() or "series"
+        new_kind = self.media_kind_combo.currentData() or "series"
+        if new_kind == self._media_kind:
+            return
+        if self._episode_has_exported_clips():
+            answer = QMessageBox.question(
+                self,
+                "Cambiar película o serie",
+                "Este proyecto ya tiene clips generados.\n\n"
+                "Esos clips conservan su nombre de archivo. "
+                "Los clips nuevos usarán el nombre del modo elegido.\n\n"
+                "¿Cambiar el modo?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                self.media_kind_combo.blockSignals(True)
+                idx = self.media_kind_combo.findData(self._media_kind)
+                if idx >= 0:
+                    self.media_kind_combo.setCurrentIndex(idx)
+                self.media_kind_combo.blockSignals(False)
+                return
+            self._locked_tsv_basename = tsv_lock_after_mode_change(
+                self._locked_tsv_basename,
+                self._computed_tsv_basename(),
+                self._computed_tsv_exists(),
+            )
+        self._media_kind = new_kind
         self._sync_media_kind_controls()
         self._mark_project_modified()
+
+    def _computed_tsv_basename(self) -> str:
+        title = self.episode_title or None
+        return tsv_filename(
+            self._effective_series_name(),
+            self._file_episode_label(),
+            title,
+        )
+
+    def _computed_tsv_exists(self) -> bool:
+        if not self._project_path:
+            return False
+        path = os.path.join(
+            os.path.dirname(self._project_path),
+            self._computed_tsv_basename(),
+        )
+        return os.path.isfile(path)
 
     def _on_season_episode_changed(self):
         self._season = self.season_spin.value()
@@ -3425,6 +3476,15 @@ class MainWindow(QMainWindow):
         seg["status"] = "exported"
         seg.pop("preview_start", None)
         seg.pop("preview_end", None)
+        seq_num = self._export_sequence_number(seg["id"])
+        webm_path, mp3_path, _base = clip_output_paths(
+            self._effective_series_name(),
+            self._file_episode_label(),
+            seq_num,
+            self._output_dir(),
+        )
+        seg["video_path"] = webm_path
+        seg["audio_path"] = mp3_path
 
     def _restore_segment_status(self, seg: dict):
         prev = self._batch_previous_status.get(seg["id"])
@@ -3720,8 +3780,14 @@ class MainWindow(QMainWindow):
             if seg.get("status") not in ("exported", "outdated"):
                 continue
             seq_num = self._export_sequence_number(seg["id"])
-            video_filename = clip_video_filename(series_name, file_episode_label, seq_num)
-            audio_filename = clip_audio_filename(series_name, file_episode_label, seq_num)
+            stored_video = str(seg.get("video_path") or "")
+            stored_audio = str(seg.get("audio_path") or "")
+            if stored_video or stored_audio:
+                video_filename = os.path.basename(stored_video)
+                audio_filename = os.path.basename(stored_audio)
+            else:
+                video_filename = clip_video_filename(series_name, file_episode_label, seq_num)
+                audio_filename = clip_audio_filename(series_name, file_episode_label, seq_num)
             rows.append((
                 seq_num, seg["text"], video_filename, audio_filename,
                 file_episode_label, self.episode_title, seg.get("translation", ""),
@@ -3743,10 +3809,10 @@ class MainWindow(QMainWindow):
         if not tsv_rows:
             return None, 0, None
 
-        series_name = self._effective_series_name()
-        file_episode_label = self._file_episode_label()
-        title = self.episode_title or None
-        basename = tsv_filename(series_name, file_episode_label, title)
+        basename = choose_tsv_basename(
+            self._computed_tsv_basename(),
+            self._locked_tsv_basename,
+        )
         tsv_path = os.path.join(os.path.dirname(self._project_path), basename)
 
         translation_note: str | None = None

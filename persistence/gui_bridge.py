@@ -276,8 +276,14 @@ def segment_to_clip(
         status=clip_status,
     )
     if clip_status in (ClipStatus.GENERATED, ClipStatus.OUTDATED):
-        clip.video_path = webm_path
-        clip.audio_path = mp3_path
+        stored_video = str(seg.get("video_path") or "")
+        stored_audio = str(seg.get("audio_path") or "")
+        if stored_video or stored_audio:
+            clip.video_path = stored_video
+            clip.audio_path = stored_audio
+        else:
+            clip.video_path = webm_path
+            clip.audio_path = mp3_path
     clip.generation_fingerprint = dict(seg.get("generation_fingerprint", {}))
     clip.translation = str(seg.get("translation", ""))
     return clip
@@ -296,6 +302,10 @@ def clip_to_segment(clip: Clip, extras: dict[str, Any] | None = None) -> dict:
         "padding_start": clip.padding_start,
         "padding_end": clip.padding_end,
     }
+    if clip.video_path:
+        seg["video_path"] = clip.video_path
+    if clip.audio_path:
+        seg["audio_path"] = clip.audio_path
     if status == "preview":
         seg["preview_start"] = extras.get("preview_start", clip.start)
         seg["preview_end"] = extras.get("preview_end", clip.end)

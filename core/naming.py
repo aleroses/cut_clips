@@ -44,3 +44,21 @@ def tsv_filename(series_name, episode_label, episode_title=None):
         parts.append(episode_title)
     parts.append("anki.tsv")
     return "_".join(parts)
+
+
+def choose_tsv_basename(computed: str, locked: str | None = None) -> str:
+    """Reutiliza el TSV ya escrito si un cambio de modo fijó su nombre."""
+    return locked or computed
+
+
+def tsv_lock_after_mode_change(
+    current_lock: str | None,
+    previous_basename: str,
+    previous_exists: bool,
+) -> str | None:
+    """Conserva el nombre del TSV anterior si ese archivo ya existe."""
+    if current_lock:
+        return current_lock
+    if previous_exists and previous_basename:
+        return previous_basename
+    return None

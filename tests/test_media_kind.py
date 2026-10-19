@@ -3,6 +3,7 @@
 import json
 import os
 
+from core.naming import choose_tsv_basename, tsv_lock_after_mode_change
 from persistence.gui_bridge import build_project_from_gui, load_gui_state_from_project
 from persistence.models import SCHEMA_VERSION, Episode, Project
 from persistence.store import default_project_path, load_project, save_project
@@ -189,3 +190,70 @@ def test_load_gui_state_round_trip_movie(tmp_path):
     assert state.media_kind == "movie"
     assert loaded.episodes[0].episode_label == ""
     assert loaded.episodes[0].clips[0].video_path.endswith("Nombre_Line_0001.webm")
+
+
+def test_generated_clip_keeps_its_path_when_saved_as_movie():
+    stored_video = "output_files/Nombre_S01E04_Line_0547.webm"
+    stored_audio = "output_files/Nombre_S01E04_Line_0547.mp3"
+    generated = _exported_segment()
+    generated["video_path"] = stored_video
+    generated["audio_path"] = stored_audio
+    pending = {
+        "id": 2,
+        "status": "pending",
+        "text": "Next",
+        "start": 1.0,
+        "end": 2.0,
+        "cue_indices": [],
+    }
+    project = build_project_from_gui(
+        series_name="Nombre",
+        season=1,
+        episode_num=4,
+        video_path="/tmp/video.mkv",
+        episode_title="Dominoes",
+        subtitle_path="",
+        subtitle_track_index=None,
+        subtitle_language="en",
+        audio_track=0,
+        video_track=0,
+        media_summary=None,
+        parser_options=ParserOptions(),
+        cue_map={},
+        segments=[generated, pending],
+        translation_provider="none",
+        last_clip_id=2,
+        root_dir=".",
+        media_kind="movie",
+    )
+    episode = project.episodes[0]
+    assert episode.media_kind == "movie"
+    assert episode.episode_label == ""
+    assert episode.clips[0].video_path == stored_video
+    assert episode.clips[0].audio_path == stored_audio
+    assert episode.clips[1].video_path == ""
+    assert episode.clips[1].audio_path == ""
+
+
+def test_loaded_segment_remembers_generated_paths(tmp_path):
+    project = _build()
+    path = tmp_path / "series.anki-project.json"
+    save_project(project, str(path))
+    state = load_gui_state_from_project(load_project(str(path)))
+    segment = state.segments[0]
+    assert segment["video_path"].endswith("Nombre_S01E01_Line_0001.webm")
+    assert segment["audio_path"].endswith("Nombre_S01E01_Line_0001.mp3")
+
+
+def test_existing_tsv_name_stays_after_mode_change():
+    previous = "Nombre_S01E04_Dominoes_anki.tsv"
+    movie_name = "Nombre_Dominoes_anki.tsv"
+    locked = tsv_lock_after_mode_change(None, previous, True)
+    assert locked == previous
+    assert choose_tsv_basename(movie_name, locked) == previous
+    assert tsv_lock_after_mode_change(locked, movie_name, True) == previous
+
+
+def test_new_movie_tsv_name_is_used_when_none_exists():
+    assert tsv_lock_after_mode_change(None, "Nombre_S01E01_anki.tsv", False) is None
+    assert choose_tsv_basename("Nombre_anki.tsv", None) == "Nombre_anki.tsv"

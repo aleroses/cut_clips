@@ -77,7 +77,11 @@ from core.naming import (
 )
 from core.reference_alignment import align_reference_text
 from core.segment_selection import next_id_after_removal
-from core.subtitle_text import load_reference_cues, reference_text_for_range
+from core.subtitle_text import (
+    load_reference_cues,
+    reference_differences,
+    reference_text_for_range,
+)
 from media.probe import (
     probe, summarize_media, extract_subtitle, find_subtitle_stream,
     find_sidecar_subtitle, subtitle_extract_path,
@@ -1936,18 +1940,21 @@ class MainWindow(QMainWindow):
         except OSError as e:
             QMessageBox.critical(self, "Error al leer", str(e))
             return
+        language = self.subtitle_language or "en"
         checksum = align_reference_text(self.cue_map, "")["checksum"]
+        differences = reference_differences(self.cue_map, cues, language=language)
         self.reference_alignment = {
             "checksum": checksum,
             "cue_reference_text": {},
-            "differences": [],
+            "differences": differences,
             "reference_cues": cues,
         }
         self._mark_project_modified()
         self._set_reference_panel_visible(True)
         self._update_reference_text_display(self._get_selected_segment())
+        diff_count = len(differences)
         self.statusBar().showMessage(
-            f"Texto de referencia cargado: {len(cues)} bloque(s) con tiempo."
+            f"Texto de referencia cargado: {diff_count} diferencia(s) detectada(s)."
         )
 
     def open_subtitle(self):

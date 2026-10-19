@@ -1,6 +1,7 @@
 """Limpieza de texto de subtítulos para comparar, sin cambiar el parseo."""
 
 import re
+import unicodedata
 
 from core.subtitle_parser import clean_text, normalize_case, parse_srt_blocks
 
@@ -68,3 +69,38 @@ def reference_text_for_range(
             if text:
                 parts.append(text)
     return " ".join(parts)
+
+
+def _fold_for_compare(text: str) -> str:
+    """Minúsculas y sin puntuación, para decidir si dos textos dicen lo mismo."""
+    kept = []
+    for char in text.casefold():
+        if unicodedata.category(char).startswith("P"):
+            continue
+        kept.append(char)
+    return " ".join("".join(kept).split())
+
+
+def reference_differences(
+    cue_map: dict,
+    reference_cues: list[dict],
+    language: str = "en",
+) -> list[dict]:
+    """Diferencias entre cada cue del vídeo y el texto externo que lo solapa."""
+    differences = []
+    for cue_index in sorted(cue_map, key=lambda key: int(key)):
+        cue = cue_map[cue_index]
+        video_text = clean_subtitle_text(str(cue.get("text") or ""), language=language)
+        reference_text = reference_text_for_range(
+            reference_cues,
+            float(cue["start"]),
+            float(cue["end"]),
+        )
+        if _fold_for_compare(video_text) == _fold_for_compare(reference_text):
+            continue
+        differences.append({
+            "video_text": video_text,
+            "reference_text": reference_text,
+            "cue_indices": [int(cue_index)],
+        })
+    return differences

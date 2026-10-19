@@ -4,6 +4,7 @@ from persistence.gui_bridge import reference_alignment_from_dict
 from core.subtitle_text import (
     REFERENCE_MATCH_TOLERANCE_SEC,
     load_reference_cues,
+    reference_differences,
     reference_text_for_range,
 )
 
@@ -75,6 +76,40 @@ def test_tolerance_includes_nearby_and_skips_farther():
     far = [{"start": 2.6, "end": 3.2, "text": "lejos"}]
     assert reference_text_for_range(near, 1.0, 2.0) == "cerca"
     assert reference_text_for_range(far, 1.0, 2.0) == ""
+
+
+def test_sdh_labels_are_not_differences():
+    cue_map = {
+        0: {
+            "start": 1.0,
+            "end": 2.0,
+            "text": "Hello (reporter) (male) (radio) (screams) there",
+        },
+    }
+    cues = [{"start": 1.0, "end": 2.0, "text": "Hello there"}]
+    diffs = reference_differences(cue_map, cues)
+    blob = " ".join(
+        f"{item['video_text']} {item['reference_text']}" for item in diffs
+    ).casefold()
+    for word in ("reporter", "male", "radio", "screams"):
+        assert word not in blob
+    assert diffs == []
+
+
+def test_real_dialogue_change_is_a_difference():
+    cue_map = {0: {"start": 1.0, "end": 2.0, "text": "Hello there"}}
+    cues = [{"start": 1.0, "end": 2.0, "text": "Goodbye there"}]
+    assert reference_differences(cue_map, cues) == [{
+        "video_text": "Hello there",
+        "reference_text": "Goodbye there",
+        "cue_indices": [0],
+    }]
+
+
+def test_case_and_loose_punctuation_are_not_differences():
+    cue_map = {0: {"start": 1.0, "end": 2.0, "text": "Hello, there!"}}
+    cues = [{"start": 1.0, "end": 2.0, "text": "hello there"}]
+    assert reference_differences(cue_map, cues) == []
 
 
 def test_old_reference_map_without_cues_still_loads():

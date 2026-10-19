@@ -25,6 +25,7 @@ Temporada y episodio solo se ven en Serie.
 | load an external srt as timed reference cues | Lee un SRT externo a bloques con inicio, fin y texto limpio, en UTF-8 o Windows-1252. | `core/subtitle_text.py`, `tests/test_reference_cues.py` |
 | find reference text by clip time range | El texto de referencia de un clip es el de los bloques que solapan su intervalo, con 0.5 s de tolerancia. | `core/subtitle_text.py`, `tests/test_reference_cues.py` |
 | accept srt files in the external reference button | El mismo botón acepta un .srt. La caja muestra el texto del intervalo del clip y un proyecto viejo abre sin ese campo. | `gui_app.py`, `persistence/gui_bridge.py`, `tests/test_reference_cues.py` |
+| compare cleaned video and reference text | Las diferencias se calculan sobre el texto limpio, así que anotaciones como reporter o screams no cuentan. | `core/subtitle_text.py`, `gui_app.py`, `tests/test_reference_cues.py` |
 
 ## Pendiente, todavía no implementado
 

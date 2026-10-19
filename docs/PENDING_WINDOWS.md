@@ -21,16 +21,15 @@ Temporada y episodio solo se ven en Serie.
 | `c40e0d8` | Reconstruye `series_manifest.json` con los mismos dos campos, en dry-run salvo `--apply`. | `tools/rebuild_series_manifest.py`, `tests/test_rebuild_series_manifest.py`, `docs/20-rebuild-series-manifest.md` |
 | `02d6cb3` | Tras eliminar, fusionar o dividir, el editor y el bucle de mpv pasan al clip que queda. Si no queda ninguno, los campos se vacían y Probar/Generar se deshabilitan. | `gui_app.py`, `core/segment_selection.py`, `tests/test_segment_selection.py` |
 | `1116710` | Lee un SRT en UTF-8 (con o sin BOM), UTF-16 con BOM, Windows-1252 o Latin-1. El parseo de un archivo UTF-8 no cambia. | `core/subtitle_parser.py`, `tests/test_subtitle_encoding.py` |
-| add subtitle text cleaning helpers | Limpia etiquetas, anotaciones SDH, anuncios y mayúsculas del texto de un subtítulo. | `core/subtitle_text.py`, `tests/test_subtitle_text.py` |
-| load an external srt as timed reference cues | Lee un SRT externo a bloques con inicio, fin y texto limpio, en UTF-8 o Windows-1252. | `core/subtitle_text.py`, `tests/test_reference_cues.py` |
-| find reference text by clip time range | El texto de referencia de un clip es el de los bloques que solapan su intervalo, con 0.5 s de tolerancia. | `core/subtitle_text.py`, `tests/test_reference_cues.py` |
-| accept srt files in the external reference button | El mismo botón acepta un .srt. La caja muestra el texto del intervalo del clip y un proyecto viejo abre sin ese campo. | `gui_app.py`, `persistence/gui_bridge.py`, `tests/test_reference_cues.py` |
-| compare cleaned video and reference text | Las diferencias se calculan sobre el texto limpio, así que anotaciones como reporter o screams no cuentan. | `core/subtitle_text.py`, `gui_app.py`, `tests/test_reference_cues.py` |
+| `40fa329` | Limpia etiquetas, anotaciones SDH, anuncios y mayúsculas del texto de un subtítulo. | `core/subtitle_text.py`, `tests/test_subtitle_text.py` |
+| `4742cfb` | Lee un SRT externo a bloques con inicio, fin y texto limpio, en UTF-8 o Windows-1252. | `core/subtitle_text.py`, `tests/test_reference_cues.py` |
+| `e92bad7` | El texto de referencia de un clip es el de los bloques que solapan su intervalo, con 0.5 s de tolerancia. | `core/subtitle_text.py`, `tests/test_reference_cues.py` |
+| `a7605e6` | El mismo botón acepta un .srt. La caja muestra el texto del intervalo del clip y un proyecto viejo abre sin ese campo. | `gui_app.py`, `persistence/gui_bridge.py`, `tests/test_reference_cues.py` |
+| `a8f6005` | Las diferencias se calculan sobre el texto limpio, así que anotaciones como reporter o screams no cuentan. | `core/subtitle_text.py`, `gui_app.py`, `tests/test_reference_cues.py` |
 
 ## Pendiente, todavía no implementado
 
 - Manifiesto de serie dentro de una carpeta llamada `data/` (regla de portability, aún no portada). En `debian` el manifiesto sigue en la carpeta padre del episodio.
-- «Cargar externo»: hoy un `.srt` se guarda como texto plano con índices y tiempos mezclados (`gui_reference_map.cue_reference_text`), lo que genera diferencias falsas. Reutilizar `core/subtitle_parser.py` y aceptar un segundo SRT para comparar. Primero el análisis, sin implementarlo todavía.
 - Opcional: ofrecer ocultar o filtrar líneas sin audio, del tipo «Captions made possible by...», al abrir un vídeo.
 - Escape de campos del TSV con `csv.writer`.
 - Paso 7: apartado de nombres película/serie en `docs/04-gui.md` y `docs/changelog.md`.

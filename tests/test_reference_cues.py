@@ -1,5 +1,6 @@
 """SRT externo como bloques con tiempo y texto limpio."""
 
+from persistence.gui_bridge import reference_alignment_from_dict
 from core.subtitle_text import (
     REFERENCE_MATCH_TOLERANCE_SEC,
     load_reference_cues,
@@ -74,3 +75,32 @@ def test_tolerance_includes_nearby_and_skips_farther():
     far = [{"start": 2.6, "end": 3.2, "text": "lejos"}]
     assert reference_text_for_range(near, 1.0, 2.0) == "cerca"
     assert reference_text_for_range(far, 1.0, 2.0) == ""
+
+
+def test_old_reference_map_without_cues_still_loads():
+    restored = reference_alignment_from_dict({
+        "checksum": "abc",
+        "cue_reference_text": {"1": "00:00:01,000 dirty"},
+        "differences": [{"cue_indices": [1], "video_text": "a", "reference_text": "b"}],
+    })
+    assert "reference_cues" not in restored
+    assert restored["cue_reference_text"][1] == "00:00:01,000 dirty"
+
+
+def test_reference_cues_are_an_optional_field():
+    restored = reference_alignment_from_dict({
+        "checksum": "abc",
+        "cue_reference_text": {},
+        "differences": [],
+        "reference_cues": [{"start": "1.5", "end": 2, "text": "Hola"}],
+    })
+    assert restored["reference_cues"] == [{"start": 1.5, "end": 2.0, "text": "Hola"}]
+
+
+def test_invalid_reference_cues_are_ignored():
+    restored = reference_alignment_from_dict({
+        "cue_reference_text": {"0": "viejo"},
+        "reference_cues": "nope",
+    })
+    assert "reference_cues" not in restored
+    assert restored["cue_reference_text"][0] == "viejo"

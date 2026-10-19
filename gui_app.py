@@ -77,6 +77,7 @@ from core.naming import (
 )
 from core.reference_alignment import align_reference_text
 from core.segment_selection import next_id_after_removal
+from core.subtitle_text import load_reference_cues, reference_text_for_range
 from media.probe import (
     probe, summarize_media, extract_subtitle, find_subtitle_stream,
     find_sidecar_subtitle, subtitle_extract_path,
@@ -1906,9 +1907,12 @@ class MainWindow(QMainWindow):
             self,
             "Cargar texto de referencia externo",
             "",
-            "Texto (*.txt *.md);;Todos (*.*)",
+            "Texto (*.txt);;Markdown (*.md);;Subtítulos (*.srt);;Todos (*.*)",
         )
         if not path:
+            return
+        if os.path.splitext(path)[1].casefold() == ".srt":
+            self._load_external_srt_reference(path)
             return
         try:
             with open(path, encoding="utf-8") as f:
@@ -1924,6 +1928,26 @@ class MainWindow(QMainWindow):
         self._update_reference_text_display(self._get_selected_segment())
         self.statusBar().showMessage(
             f"Texto de referencia cargado: {diff_count} diferencia(s) detectada(s)."
+        )
+
+    def _load_external_srt_reference(self, path: str) -> None:
+        try:
+            cues = load_reference_cues(path, language=self.subtitle_language or "en")
+        except OSError as e:
+            QMessageBox.critical(self, "Error al leer", str(e))
+            return
+        checksum = align_reference_text(self.cue_map, "")["checksum"]
+        self.reference_alignment = {
+            "checksum": checksum,
+            "cue_reference_text": {},
+            "differences": [],
+            "reference_cues": cues,
+        }
+        self._mark_project_modified()
+        self._set_reference_panel_visible(True)
+        self._update_reference_text_display(self._get_selected_segment())
+        self.statusBar().showMessage(
+            f"Texto de referencia cargado: {len(cues)} bloque(s) con tiempo."
         )
 
     def open_subtitle(self):
@@ -2498,19 +2522,26 @@ class MainWindow(QMainWindow):
             return
 
         indices = seg.get("cue_indices") or []
-        if not indices:
-            self.reference_text_display.clear()
-            self.reference_text_display.setStyleSheet("")
-            return
+        if "reference_cues" in self.reference_alignment:
+            reference_text = reference_text_for_range(
+                self.reference_alignment.get("reference_cues") or [],
+                float(seg["start"]),
+                float(seg["end"]),
+            )
+        else:
+            if not indices:
+                self.reference_text_display.clear()
+                self.reference_text_display.setStyleSheet("")
+                return
 
-        cue_reference_text = self.reference_alignment.get("cue_reference_text") or {}
-        parts = [
-            cue_reference_text.get(int(idx), cue_reference_text.get(idx, ""))
-            for idx in indices
-        ]
-        reference_text = " ".join(part for part in parts if part).strip()
-        if not reference_text:
-            reference_text = "(sin texto de referencia para este bloque)"
+            cue_reference_text = self.reference_alignment.get("cue_reference_text") or {}
+            parts = [
+                cue_reference_text.get(int(idx), cue_reference_text.get(idx, ""))
+                for idx in indices
+            ]
+            reference_text = " ".join(part for part in parts if part).strip()
+            if not reference_text:
+                reference_text = "(sin texto de referencia para este bloque)"
 
         seg_indices = set(indices)
         has_difference = any(

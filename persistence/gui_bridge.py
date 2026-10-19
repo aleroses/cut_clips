@@ -324,7 +324,32 @@ def reference_alignment_from_dict(data: dict | None) -> dict | None:
     cue_text = restored.get("cue_reference_text")
     if isinstance(cue_text, dict):
         restored["cue_reference_text"] = {int(k): v for k, v in cue_text.items()}
+    if "reference_cues" in restored:
+        raw_cues = restored.get("reference_cues")
+        if isinstance(raw_cues, list):
+            restored["reference_cues"] = _reference_cues_from_list(raw_cues)
+        else:
+            restored.pop("reference_cues", None)
     return restored
+
+
+def _reference_cues_from_list(raw) -> list[dict]:
+    """Campo opcional. Una entrada mal formada se salta y no rompe el proyecto."""
+    if not isinstance(raw, list):
+        return []
+    cues = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        try:
+            cues.append({
+                "start": float(item["start"]),
+                "end": float(item["end"]),
+                "text": str(item.get("text") or ""),
+            })
+        except (KeyError, TypeError, ValueError):
+            continue
+    return cues
 
 
 def build_project_from_gui(

@@ -11,6 +11,10 @@ A tool to cut video clips, translate subtitles, and generate TSV files ready for
 
 This makes it possible to turn an entire video episode into Anki study material with just a few steps.
 
+## Pendiente para Windows
+
+La rama `debian` tiene cambios que todavía no están en la rama de Windows. La lista, con commits y archivos, está en [docs/PENDING_WINDOWS.md](docs/PENDING_WINDOWS.md).
+
 ## Key Features
 
 - Precise video and audio clip cutting.

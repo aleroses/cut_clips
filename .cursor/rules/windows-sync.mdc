@@ -1,0 +1,14 @@
+---
+description: Al añadir funcionalidad en debian, anotarla para Windows y mantener el código multiplataforma.
+alwaysApply: true
+---
+
+# Sincronizar debian con Windows
+
+Todo commit que añada funcionalidad en la rama `debian` debe agregar una entrada a `docs/PENDING_WINDOWS.md`: hash, qué hace y archivos tocados.
+
+El código nuevo es multiplataforma. Las rutas usan `pathlib` o `os.path`. Los archivos de texto se abren con UTF-8 explícito.
+
+No incluyas código específico de Windows ni de Linux fuera de un módulo aislado. Eso incluye DLL de mpv, `wasapi`, PowerShell, `os.startfile` y rutas con barra invertida.
+
+Antes de portar algo que también esté en `origin/portability`, compara las dos ramas para no duplicar el cambio.

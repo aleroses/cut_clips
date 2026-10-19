@@ -340,13 +340,19 @@ def build_project_from_gui(
     padding_end: float = 0.0,
     reference_alignment: dict | None = None,
     sequence_offset: int = 0,
+    media_kind: str = "series",
 ) -> Project:
     output_dir = "output_files"
     if video_path:
         output_dir = os.path.join(os.path.dirname(video_path), "output_files")
 
-    episode_label = format_episode_label(season, episode_num)
-    file_episode_label = format_episode_label(season, episode_num, style="compact")
+    if media_kind == "movie":
+        episode_label = ""
+        file_episode_label = ""
+    else:
+        media_kind = "series"
+        episode_label = format_episode_label(season, episode_num)
+        file_episode_label = format_episode_label(season, episode_num, style="compact")
     clips: list[Clip] = []
     clips_extra: dict[str, dict[str, float]] = {}
     internal_index = 0
@@ -383,6 +389,7 @@ def build_project_from_gui(
         video_path=video_path or "",
         season=season,
         episode=episode_num,
+        episode_label=episode_label,
         episode_title=episode_title,
         subtitle_path=subtitle_path or "",
         subtitle_track_index=subtitle_track_index,
@@ -391,6 +398,7 @@ def build_project_from_gui(
         video_track=video_track,
         padding_start=padding_start,
         padding_end=padding_end,
+        media_kind=media_kind,
         media_info=media_info,
         subtitles=cues_to_subtitle_cues(cue_map),
         clips=clips,
@@ -432,6 +440,7 @@ class LoadedGuiState:
     padding_end: float
     reference_alignment: dict | None
     sequence_offset: int | None = None
+    media_kind: str = "series"
 
 
 def load_gui_state_from_project(project: Project) -> LoadedGuiState:
@@ -478,4 +487,5 @@ def load_gui_state_from_project(project: Project) -> LoadedGuiState:
         padding_end=episode.padding_end,
         reference_alignment=reference_alignment,
         sequence_offset=infer_sequence_offset_from_clips(episode.clips),
+        media_kind=episode.media_kind or "series",
     )

@@ -3,8 +3,10 @@
 import json
 import os
 
+from persistence.gui_bridge import build_project_from_gui, load_gui_state_from_project
 from persistence.models import SCHEMA_VERSION, Episode, Project
 from persistence.store import default_project_path, load_project, save_project
+from ui.parser_options_widget import ParserOptions
 
 
 def test_old_episode_without_media_kind_stays_series_and_keeps_label():
@@ -85,3 +87,105 @@ def test_default_project_path_omits_label_for_movies(tmp_path):
     assert os.path.basename(movie_path) == "Nombre.anki-project.json"
     assert series_path == os.path.join(str(tmp_path), "Nombre_S01E01.anki-project.json")
     assert movie_path == os.path.join(str(tmp_path), "Nombre.anki-project.json")
+
+
+def _exported_segment():
+    return {
+        "id": 1,
+        "status": "exported",
+        "text": "Hello",
+        "start": 0.0,
+        "end": 1.0,
+        "cue_indices": [],
+    }
+
+
+def _build(media_kind=None):
+    kwargs = dict(
+        series_name="Nombre",
+        season=1,
+        episode_num=1,
+        video_path="/tmp/video.mkv",
+        episode_title="",
+        subtitle_path="",
+        subtitle_track_index=None,
+        subtitle_language="en",
+        audio_track=0,
+        video_track=0,
+        media_summary=None,
+        parser_options=ParserOptions(),
+        cue_map={},
+        segments=[_exported_segment()],
+        translation_provider="none",
+        last_clip_id=1,
+        root_dir=".",
+    )
+    if media_kind is not None:
+        kwargs["media_kind"] = media_kind
+    return build_project_from_gui(**kwargs)
+
+
+def test_build_project_without_media_kind_stays_series():
+    project = _build()
+    episode = project.episodes[0]
+    assert episode.media_kind == "series"
+    assert episode.episode_label == "S01-Ep01"
+    assert episode.clips[0].video_path.endswith("Nombre_S01E01_Line_0001.webm")
+
+
+def test_build_project_movie_omits_episode_label():
+    project = _build("movie")
+    episode = project.episodes[0]
+    assert episode.media_kind == "movie"
+    assert episode.episode_label == ""
+    assert episode.clips[0].video_path.endswith("Nombre_Line_0001.webm")
+
+
+def test_load_gui_state_from_legacy_json_keeps_series_and_clip_path(tmp_path):
+    clip_path = "output_files/Nombre_S01E01_Line_0001.webm"
+    path = tmp_path / "legacy.anki-project.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "series_name": "Nombre",
+                "root_dir": ".",
+                "last_clip_id": 1,
+                "episodes": [
+                    {
+                        "season": 1,
+                        "episode": 1,
+                        "episode_label": "S01-Ep01",
+                        "clips": [
+                            {
+                                "id": 1,
+                                "status": "generated",
+                                "text": "Hello",
+                                "start": 0.0,
+                                "end": 1.0,
+                                "video_path": clip_path,
+                                "audio_path": "output_files/Nombre_S01E01_Line_0001.mp3",
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    project = load_project(str(path))
+    state = load_gui_state_from_project(project)
+    assert state.media_kind == "series"
+    assert project.episodes[0].episode_label == "S01-Ep01"
+    assert project.episodes[0].clips[0].video_path == clip_path
+
+
+def test_load_gui_state_round_trip_movie(tmp_path):
+    project = _build("movie")
+    path = tmp_path / "movie.anki-project.json"
+    save_project(project, str(path))
+    loaded = load_project(str(path))
+    state = load_gui_state_from_project(loaded)
+    assert state.media_kind == "movie"
+    assert loaded.episodes[0].episode_label == ""
+    assert loaded.episodes[0].clips[0].video_path.endswith("Nombre_Line_0001.webm")

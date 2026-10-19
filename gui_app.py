@@ -90,6 +90,7 @@ from persistence.gui_bridge import (
     guess_series_name,
     load_gui_state_from_project,
     parse_season_episode,
+    resolve_media_kind,
 )
 from persistence.store import default_project_path, load_project, save_project
 from persistence.series_manifest import read_series_manifest, write_series_manifest
@@ -532,6 +533,7 @@ class MainWindow(QMainWindow):
         self._series_name = ""
         self._season = 1
         self._episode_num = 1
+        self._media_kind = "series"
         self._project_root_dir = "."
         self._series_sequence_offset_cache: int | None = None
         self._sequence_offset_from_exports: int | None = None
@@ -705,6 +707,7 @@ class MainWindow(QMainWindow):
             padding_end=self.padding_end,
             reference_alignment=self.reference_alignment,
             sequence_offset=self._series_sequence_offset(),
+            media_kind=self._media_kind,
         )
 
     def save_project(self):
@@ -830,6 +833,7 @@ class MainWindow(QMainWindow):
         self._series_name = state.series_name
         self._season = state.season
         self._episode_num = state.episode_num
+        self._media_kind = state.media_kind or "series"
         self.padding_start = state.padding_start
         self.padding_end = state.padding_end
         self.episode_title = state.episode_title
@@ -846,6 +850,7 @@ class MainWindow(QMainWindow):
         self.next_id = state.next_id
         self._set_translation_provider(state.translation_provider)
         self.series_name_edit.setText(state.series_name)
+        self._sync_media_kind_controls()
         self._sequence_offset_from_exports = state.sequence_offset
         if state.sequence_offset is not None:
             self._series_sequence_offset_cache = state.sequence_offset
@@ -937,8 +942,9 @@ class MainWindow(QMainWindow):
                 self.episode_title = extract_episode_title(raw_title) or ""
             if not self._series_name:
                 self._series_name = guess_series_name(path)
-            if self._season == 1 and self._episode_num == 1:
+            if self._media_kind != "movie" and self._season == 1 and self._episode_num == 1:
                 self._season, self._episode_num = parse_season_episode(raw_title)
+                self._sync_media_kind_controls()
 
             if mpv is not None:
                 if not self._use_opengl_embed:
@@ -1498,7 +1504,27 @@ class MainWindow(QMainWindow):
         self.series_name_edit.setPlaceholderText("Nombre para archivos (ej. Spawn_Anki_Video)")
         self.series_name_edit.textChanged.connect(self._on_series_name_changed)
         series_row.addWidget(self.series_name_edit)
+        self.media_kind_combo = QComboBox()
+        self.media_kind_combo.addItem("Película", "movie")
+        self.media_kind_combo.addItem("Serie", "series")
+        self.media_kind_combo.currentIndexChanged.connect(self._on_media_kind_changed)
+        series_row.addWidget(self.media_kind_combo)
+        self.season_label = QLabel("Temporada:")
+        series_row.addWidget(self.season_label)
+        self.season_spin = QSpinBox()
+        self.season_spin.setRange(1, 99)
+        self.season_spin.setValue(self._season)
+        self.season_spin.valueChanged.connect(self._on_season_episode_changed)
+        series_row.addWidget(self.season_spin)
+        self.episode_num_label = QLabel("Episodio:")
+        series_row.addWidget(self.episode_num_label)
+        self.episode_spin = QSpinBox()
+        self.episode_spin.setRange(1, 999)
+        self.episode_spin.setValue(self._episode_num)
+        self.episode_spin.valueChanged.connect(self._on_season_episode_changed)
+        series_row.addWidget(self.episode_spin)
         generate_layout.addLayout(series_row)
+        self._sync_media_kind_controls()
 
         padding_group = QGroupBox("Padding avanzado (opcional)")
         padding_group.setCheckable(True)
@@ -1812,7 +1838,11 @@ class MainWindow(QMainWindow):
             self.series_name_edit.setText(self._series_name)
             self.series_name_edit.blockSignals(False)
             raw_title = summarize_media(self.probe_data)["format"].get("title") or detect_video_title(path)
-            self._season, self._episode_num = parse_season_episode(raw_title)
+            kind, season, episode = resolve_media_kind(os.path.basename(path), raw_title)
+            self._media_kind = kind
+            self._season = season
+            self._episode_num = episode
+            self._sync_media_kind_controls()
             self.episode_title = extract_episode_title(raw_title) or ""
             self._project_path = None
             self._project_root_dir = os.path.dirname(os.path.abspath(path)) or "."
@@ -3151,10 +3181,44 @@ class MainWindow(QMainWindow):
         return safe or "Series"
 
     def _episode_label(self) -> str:
+        if self._media_kind == "movie":
+            return ""
         return format_episode_label(self._season, self._episode_num)
 
     def _file_episode_label(self) -> str:
+        if self._media_kind == "movie":
+            return ""
         return format_episode_label(self._season, self._episode_num, style="compact")
+
+    def _sync_media_kind_controls(self):
+        kind = self._media_kind if self._media_kind in ("movie", "series") else "series"
+        self._media_kind = kind
+        self.media_kind_combo.blockSignals(True)
+        idx = self.media_kind_combo.findData(kind)
+        if idx >= 0:
+            self.media_kind_combo.setCurrentIndex(idx)
+        self.media_kind_combo.blockSignals(False)
+        self.season_spin.blockSignals(True)
+        self.episode_spin.blockSignals(True)
+        self.season_spin.setValue(self._season)
+        self.episode_spin.setValue(self._episode_num)
+        self.season_spin.blockSignals(False)
+        self.episode_spin.blockSignals(False)
+        show_series = kind == "series"
+        self.season_label.setVisible(show_series)
+        self.season_spin.setVisible(show_series)
+        self.episode_num_label.setVisible(show_series)
+        self.episode_spin.setVisible(show_series)
+
+    def _on_media_kind_changed(self):
+        self._media_kind = self.media_kind_combo.currentData() or "series"
+        self._sync_media_kind_controls()
+        self._mark_project_modified()
+
+    def _on_season_episode_changed(self):
+        self._season = self.season_spin.value()
+        self._episode_num = self.episode_spin.value()
+        self._mark_project_modified()
 
     def _reset_series_sequence_state(self) -> None:
         self._series_sequence_offset_cache = None

@@ -76,6 +76,7 @@ from core.naming import (
     tsv_lock_after_mode_change,
 )
 from core.reference_alignment import align_reference_text
+from core.segment_selection import next_id_after_removal
 from media.probe import (
     probe, summarize_media, extract_subtitle, find_subtitle_stream,
     find_sidecar_subtitle, subtitle_extract_path,
@@ -1142,6 +1143,8 @@ class MainWindow(QMainWindow):
         has_player = self.player is not None
         has_segment = self._get_selected_segment() is not None
         self.preview_btn.setEnabled(has_player and has_segment)
+        if not self._batch_active:
+            self.generate_btn.setEnabled(has_segment)
         self._update_play_button()
 
     def _sync_gl_player_ref(self):
@@ -2136,7 +2139,11 @@ class MainWindow(QMainWindow):
         )
 
     def _refresh_list(
-        self, *, select_id: int | None = None, preserve_scroll: bool = True
+        self,
+        *,
+        select_id: int | None = None,
+        preserve_scroll: bool = True,
+        clear_selection: bool = False,
     ):
         if self._refreshing_list:
             return
@@ -2144,7 +2151,9 @@ class MainWindow(QMainWindow):
         try:
             self.segment_list.blockSignals(True)
             try:
-                if select_id is None:
+                if clear_selection:
+                    select_id = None
+                elif select_id is None:
                     item = self.segment_list.currentItem()
                     select_id = item.data(Qt.UserRole) if item else None
                 bar = self.segment_list.verticalScrollBar()
@@ -2178,7 +2187,9 @@ class MainWindow(QMainWindow):
                         max(bar.minimum(), min(saved_scroll, bar.maximum()))
                     )
 
-                if select_id is not None:
+                if clear_selection:
+                    self.segment_list.setCurrentRow(-1)
+                elif select_id is not None:
                     self._select_segment_by_id(
                         select_id, scroll_value=saved_scroll
                     )
@@ -2388,12 +2399,14 @@ class MainWindow(QMainWindow):
                 self.segment_list.blockSignals(True)
                 self._refresh_list()
                 self.segment_list.blockSignals(False)
+            self._update_preview_controls()
             return
         self._sync_editor_widgets_to_segment(seg)
         if needs_list_refresh:
             self.segment_list.blockSignals(True)
             self._refresh_list(select_id=seg["id"])
             self.segment_list.blockSignals(False)
+        self._update_preview_controls()
 
     def _on_segment_text_changed(self):
         seg = self._get_selected_segment()
@@ -2593,8 +2606,7 @@ class MainWindow(QMainWindow):
                 return
             self._push_undo()
             new_seg = self._split_at_srt_boundary(seg, split_after)
-            self._refresh_list(select_id=seg["id"])
-            self._sync_editor_widgets_to_segment(seg)
+            self._finish_structure_edit(select_id=seg["id"])
             self._mark_project_modified()
             self.statusBar().showMessage(
                 f"Dividido id={seg['id']} tras bloque SRT → nuevo id={new_seg['id']}."
@@ -2674,8 +2686,7 @@ class MainWindow(QMainWindow):
         self.next_id += 1
         idx = self.segments.index(seg)
         self.segments.insert(idx + 1, new_seg)
-        self._refresh_list(select_id=seg["id"])
-        self._sync_editor_widgets_to_segment(seg)
+        self._finish_structure_edit(select_id=seg["id"])
         self._mark_project_modified()
         self.statusBar().showMessage(
             f"Dividido id={seg['id']} en {split_time:.3f} s → nuevo id={new_seg['id']}."
@@ -2713,8 +2724,7 @@ class MainWindow(QMainWindow):
             seg.pop("video_path", None)
             seg.pop("audio_path", None)
         nxt["status"] = "deleted"
-        self._refresh_list(select_id=seg["id"])
-        self._sync_editor_widgets_to_segment(seg)
+        self._finish_structure_edit(select_id=seg["id"], removed=nxt)
         self._mark_project_modified()
         msg = (
             f"Fusionado: clip id={seg['id']} ahora incluye "
@@ -2727,13 +2737,105 @@ class MainWindow(QMainWindow):
             )
         self.statusBar().showMessage(msg)
 
+    def _segment_by_id(self, seg_id: int | None) -> dict | None:
+        if seg_id is None:
+            return None
+        for seg in self.segments:
+            if seg["id"] == seg_id:
+                return seg
+        return None
+
+    def _drop_removed_preview(self, seg: dict) -> None:
+        seg.pop("preview_start", None)
+        seg.pop("preview_end", None)
+        if self._preview_display_id == seg["id"]:
+            self._preview_display_id = None
+
+    def _clear_stale_preview_display(self, seg: dict) -> None:
+        if self._preview_display_id != seg["id"]:
+            return
+        if seg.get("preview_start") is None or seg.get("preview_end") is None:
+            self._preview_display_id = None
+
+    def _clear_editor_fields(self) -> None:
+        self.start_spin.blockSignals(True)
+        self.end_spin.blockSignals(True)
+        self.start_spin.setValue(0)
+        self.end_spin.setValue(0)
+        self.start_spin.blockSignals(False)
+        self.end_spin.blockSignals(False)
+        self.segment_text_edit.blockSignals(True)
+        self.segment_text_edit.clear()
+        self.segment_text_edit.blockSignals(False)
+        self._update_cues_detail(None)
+        self._update_outdated_diff_detail(None)
+        self._update_reference_text_display(None)
+        self._update_position_label()
+
+    def _stop_segment_loop(self) -> None:
+        self._segment_loop_active = False
+        self._stop_playback_timer()
+        player = self.player
+        if player is not None:
+            try:
+                player.pause = True
+                player.ab_loop_a = "no"
+                player.ab_loop_b = "no"
+            except Exception:
+                pass
+        self._update_play_button()
+        self._update_position_label()
+
+    def _retarget_preview_loop(self, seg: dict) -> None:
+        """Mueve el A-B ya activo al clip actual. No arranca reproducción."""
+        if not self._segment_loop_active or self.player is None:
+            return
+        start = float(seg["start"])
+        end = float(seg["end"])
+        if end <= start:
+            self._stop_segment_loop()
+            return
+        try:
+            self.player.command("seek", start, "absolute")
+            self.player.ab_loop_a = start
+            self.player.ab_loop_b = end
+        except Exception:
+            pass
+        self._update_position_label()
+
+    def _sync_editor_to_current_selection(self) -> None:
+        seg = self._get_selected_segment()
+        if seg is None:
+            self._clear_editor_fields()
+            self._stop_segment_loop()
+        else:
+            self._sync_editor_widgets_to_segment(seg)
+            self._retarget_preview_loop(seg)
+        self._update_preview_controls()
+
+    def _finish_structure_edit(
+        self, *, select_id: int | None, removed: dict | None = None
+    ) -> None:
+        if removed is not None:
+            self._drop_removed_preview(removed)
+        current = self._segment_by_id(select_id)
+        if current is not None:
+            self._clear_stale_preview_display(current)
+        if select_id is None:
+            self._refresh_list(clear_selection=True)
+        else:
+            self._refresh_list(select_id=select_id)
+        self._sync_editor_to_current_selection()
+
     def delete_selected(self):
         seg = self._get_selected_segment()
         if seg is None:
             return
+        visible_ids = [s["id"] for s in self.segments if s["status"] != "deleted"]
+        next_id = next_id_after_removal(visible_ids, seg["id"])
         self._push_undo()
         seg["status"] = "deleted"
-        self._refresh_list()
+        self._finish_structure_edit(select_id=next_id, removed=seg)
         self._mark_project_modified()
 
     # -- Previsualización mpv (sin cortar nada) ------------------------------
@@ -3431,9 +3533,12 @@ class MainWindow(QMainWindow):
     def _set_batch_ui_active(self, active: bool):
         self._batch_active = active
         self.batch_generate_btn.setEnabled(not active)
-        self.generate_btn.setEnabled(not active)
         self.batch_cancel_btn.setEnabled(active)
         self.batch_progress.setVisible(active)
+        if active:
+            self.generate_btn.setEnabled(False)
+        else:
+            self._update_preview_controls()
 
     def _prepare_segment_for_cut(self, seg: dict) -> tuple[float, float] | None:
         cut_start, cut_end = self._compute_cut_window(seg)

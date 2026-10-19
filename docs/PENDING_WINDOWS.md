@@ -18,7 +18,7 @@ Temporada y episodio solo se ven en Serie.
 | `8eaf29d` | Desplegable Película/Serie y spinboxes de temporada y episodio. Guardar y abrir conservan el modo. | `gui_app.py`, `persistence/gui_bridge.py`, `tests/test_media_kind.py` |
 | `4777a41` | Cambiar el modo con clips ya generados pide confirmación. Esos clips conservan su ruta y el TSV existente no cambia de nombre. | `core/naming.py`, `gui_app.py`, `persistence/gui_bridge.py`, `tests/test_media_kind.py` |
 | `67f3012` | Una película no lee ni escribe `series_manifest.json`. Una serie sigue usando la carpeta padre del episodio. | `persistence/series_manifest.py`, `gui_app.py`, `tests/test_series_manifest.py` |
-| add safe series manifest rebuild tool | Reconstruye `series_manifest.json` con los mismos dos campos, en dry-run salvo `--apply`. | `tools/rebuild_series_manifest.py`, `tests/test_rebuild_series_manifest.py`, `docs/20-rebuild-series-manifest.md` |
+| `c40e0d8` | Reconstruye `series_manifest.json` con los mismos dos campos, en dry-run salvo `--apply`. | `tools/rebuild_series_manifest.py`, `tests/test_rebuild_series_manifest.py`, `docs/20-rebuild-series-manifest.md` |
 
 ## Pendiente, todavía no implementado
 

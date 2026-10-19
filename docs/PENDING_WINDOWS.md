@@ -20,7 +20,7 @@ Temporada y episodio solo se ven en Serie.
 | `67f3012` | Una película no lee ni escribe `series_manifest.json`. Una serie sigue usando la carpeta padre del episodio. | `persistence/series_manifest.py`, `gui_app.py`, `tests/test_series_manifest.py` |
 | `c40e0d8` | Reconstruye `series_manifest.json` con los mismos dos campos, en dry-run salvo `--apply`. | `tools/rebuild_series_manifest.py`, `tests/test_rebuild_series_manifest.py`, `docs/20-rebuild-series-manifest.md` |
 | `02d6cb3` | Tras eliminar, fusionar o dividir, el editor y el bucle de mpv pasan al clip que queda. Si no queda ninguno, los campos se vacían y Probar/Generar se deshabilitan. | `gui_app.py`, `core/segment_selection.py`, `tests/test_segment_selection.py` |
-| read subtitle files in common encodings | Lee un SRT en UTF-8 (con o sin BOM), UTF-16 con BOM, Windows-1252 o Latin-1. El parseo de un archivo UTF-8 no cambia. | `core/subtitle_parser.py`, `tests/test_subtitle_encoding.py` |
+| `1116710` | Lee un SRT en UTF-8 (con o sin BOM), UTF-16 con BOM, Windows-1252 o Latin-1. El parseo de un archivo UTF-8 no cambia. | `core/subtitle_parser.py`, `tests/test_subtitle_encoding.py` |
 
 ## Pendiente, todavía no implementado
 

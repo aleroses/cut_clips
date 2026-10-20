@@ -57,6 +57,33 @@ def test_palette_uses_explicit_window_and_danger():
     assert danger == DANGER.lower()
 
 
+def test_side_panel_styles_use_the_palette():
+    from ui.theme import (
+        donation_button_style,
+        fingerprint_difference_style,
+        note_style,
+        reference_difference_style,
+        search_active_style,
+        search_toggle_style,
+    )
+
+    note = note_style()
+    assert TEXT_SECONDARY in note
+    assert "11px" in note
+    assert TEXT_SECONDARY in search_active_style()
+    assert BORDER in search_toggle_style()
+    donation = donation_button_style()
+    assert ELEVATED in donation
+    assert TEXT in donation
+    assert "QPushButton:hover" in donation
+    reference = reference_difference_style()
+    fingerprint = fingerprint_difference_style()
+    for style in (reference, fingerprint):
+        assert DIFF_BACKGROUND in style
+        assert DIFF_TEXT in style
+        assert DIFF_BORDER in style
+
+
 def test_stylesheet_does_not_select_video_widget():
     css = build_stylesheet()
     # Qt 6 descarta la hoja entera si encuentra :not().

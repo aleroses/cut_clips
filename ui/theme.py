@@ -180,6 +180,63 @@ QMenu::item:selected {{
 """
 
 
+def note_style() -> str:
+    return f"color: {TEXT_SECONDARY}; font-size: 11px;"
+
+
+def search_toggle_style() -> str:
+    return (
+        "QToolButton { border: none; padding: 0 4px; font-size: 13px; }"
+        f"QToolButton:checked {{ background-color: {BORDER};"
+        f" border-radius: {BUTTON_RADIUS}px; }}"
+    )
+
+
+def search_active_style() -> str:
+    return f"QLineEdit {{ border: 1px solid {TEXT_SECONDARY}; }}"
+
+
+def donation_button_style() -> str:
+    """El hover cambia el color, no el texto."""
+    return (
+        "QPushButton {"
+        f"  background-color: {ELEVATED};"
+        f"  color: {TEXT};"
+        f"  border: 1px solid {BORDER};"
+        f"  border-radius: {BUTTON_RADIUS}px;"
+        "  padding: 4px 10px;"
+        "  font-size: 12px;"
+        "}"
+        "QPushButton:hover {"
+        f"  color: {TEXT_SECONDARY};"
+        "}"
+        "QPushButton:pressed {"
+        f"  color: {TEXT_DISABLED};"
+        "}"
+    )
+
+
+def reference_difference_style() -> str:
+    return (
+        "QPlainTextEdit {"
+        f" background-color: {DIFF_BACKGROUND};"
+        f" color: {DIFF_TEXT};"
+        f" border: 1px solid {DIFF_BORDER};"
+        "}"
+    )
+
+
+def fingerprint_difference_style() -> str:
+    return (
+        "QTextEdit {"
+        f" background-color: {DIFF_BACKGROUND};"
+        f" color: {DIFF_TEXT};"
+        f" border: 1px solid {DIFF_BORDER};"
+        " font-size: 11px;"
+        "}"
+    )
+
+
 def apply_theme(app) -> None:
     """Fija Fusion, la paleta y el QSS en la aplicación."""
     app.setStyle("Fusion")

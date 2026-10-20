@@ -50,7 +50,7 @@ from dataclasses import replace
 DONATION_URL = "https://ko-fi.com/TU_USUARIO_AQUI"
 
 from PySide6.QtCore import Qt, QEvent, QRunnable, QThreadPool, Signal, QObject, QTimer, QSize, Slot
-from PySide6.QtGui import QColor, QKeyEvent, QKeySequence, QShortcut
+from PySide6.QtGui import QKeyEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QListWidget, QListWidgetItem, QPushButton, QLabel, QDoubleSpinBox,
@@ -95,7 +95,8 @@ from ui.subtitle_load_dialog import SubtitleLoadDialog
 from ui.icons import ICON_SIZE, load_icon
 from ui.srt_split_dialog import SrtSplitDialog
 from ui.theme import (
-    BORDER,
+    DIFF_BORDER,
+    DIFF_TEXT,
     POSITIVE,
     POSITIVE_HOVER,
     PRIMARY,
@@ -105,6 +106,12 @@ from ui.theme import (
     TEXT_SECONDARY,
     apply_theme,
     apply_video_background,
+    donation_button_style,
+    fingerprint_difference_style,
+    note_style,
+    reference_difference_style,
+    search_active_style,
+    search_toggle_style,
 )
 from ui.undo_stack import EditHistory
 from persistence.gui_bridge import (
@@ -262,8 +269,8 @@ def _format_fingerprint_value(key: str, value) -> str:
     return str(value)
 
 
-_OUTDATED_DIFF_BASE = "#8B4513"
-_OUTDATED_DIFF_HIGHLIGHT = QColor(Qt.darkYellow).name()
+_OUTDATED_DIFF_BASE = DIFF_TEXT
+_OUTDATED_DIFF_HIGHLIGHT = DIFF_BORDER
 
 
 def _highlight_diff_html(old: str, new: str) -> tuple[str, str]:
@@ -520,10 +527,6 @@ def _search_text_matches(haystack: str, query: str, mode: str) -> bool:
 
 class MainWindow(QMainWindow):
     _REFERENCE_STYLE_NEUTRAL = ""
-    _REFERENCE_STYLE_WARNING = (
-        "QPlainTextEdit { background-color: #fff3cd; border: 1px solid #ffc107; }"
-    )
-    _SEARCH_ACTIVE_STYLE = "QLineEdit { border: 1px solid #3d8bfd; }"
     _DEEPL_CONFIG_DIR = os.path.expanduser("~/.config/anki_video_tool")
     _DEEPL_KEY_FILE = os.path.join(_DEEPL_CONFIG_DIR, "deepl_key.txt")
     _GEMINI_KEY_FILE = os.path.join(_DEEPL_CONFIG_DIR, "gemini_key.txt")
@@ -1563,7 +1566,7 @@ class MainWindow(QMainWindow):
             "no a la previsualización mpv."
         )
         gen_note.setWordWrap(True)
-        gen_note.setStyleSheet("color: gray; font-size: 11px;")
+        gen_note.setStyleSheet(note_style())
         generate_layout.addWidget(gen_note)
 
         series_row = QHBoxLayout()
@@ -1735,10 +1738,7 @@ class MainWindow(QMainWindow):
         self.search_toggle_btn.setAutoRaise(True)
         self.search_toggle_btn.setMaximumHeight(26)
         self.search_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.search_toggle_btn.setStyleSheet(
-            "QToolButton { border: none; padding: 0 4px; font-size: 13px; }"
-            f"QToolButton:checked {{ background-color: {BORDER}; border-radius: 6px; }}"
-        )
+        self.search_toggle_btn.setStyleSheet(search_toggle_style())
         self._set_named_icon(
             self.search_toggle_btn,
             "search",
@@ -1773,7 +1773,7 @@ class MainWindow(QMainWindow):
         self.search_reference_checkbox.setVisible(False)
         search_layout.addWidget(self.search_reference_checkbox)
         self.search_match_label = QLabel("")
-        self.search_match_label.setStyleSheet("color: gray; font-size: 11px;")
+        self.search_match_label.setStyleSheet(note_style())
         search_layout.addWidget(self.search_match_label)
         self.search_close_btn = QToolButton()
         self.search_close_btn.setText("X")
@@ -1836,7 +1836,7 @@ class MainWindow(QMainWindow):
         self.outdated_diff_detail.setPlaceholderText(
             "Cambios respecto al clip generado (solo clips [OUTDATED])."
         )
-        self.outdated_diff_detail.setStyleSheet("font-size: 11px;")
+        self.outdated_diff_detail.setStyleSheet(fingerprint_difference_style())
         self.outdated_diff_detail.setVisible(False)
         cues_layout.addWidget(self.outdated_diff_detail)
         right_layout.addWidget(cues_group)
@@ -1845,8 +1845,8 @@ class MainWindow(QMainWindow):
         self._set_named_icon(
             self.donation_btn,
             "coffee",
-            normal="#5C4033",
-            hover="#5C4033",
+            normal=TEXT,
+            hover=TEXT_SECONDARY,
             disabled=TEXT_DISABLED,
         )
         self.donation_btn.setToolTip(
@@ -1854,18 +1854,7 @@ class MainWindow(QMainWindow):
         )
         self.donation_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.donation_btn.setMaximumHeight(32)
-        self.donation_btn.setStyleSheet(
-            "QPushButton {"
-            "  background-color: #FFD4B8;"
-            "  color: #5C4033;"
-            "  border: 1px solid #E8B896;"
-            "  border-radius: 4px;"
-            "  padding: 4px 10px;"
-            "  font-size: 12px;"
-            "}"
-            "QPushButton:hover { background-color: #FFC9A3; }"
-            "QPushButton:pressed { background-color: #F0B890; }"
-        )
+        self.donation_btn.setStyleSheet(donation_button_style())
         self.donation_btn.clicked.connect(lambda: webbrowser.open(DONATION_URL))
         right_layout.addWidget(self.donation_btn)
 
@@ -1880,7 +1869,7 @@ class MainWindow(QMainWindow):
 
         self._background_task_label = QLabel()
         self._background_task_label.setWordWrap(True)
-        self._background_task_label.setStyleSheet("color: gray; font-size: 11px;")
+        self._background_task_label.setStyleSheet(note_style())
         self._background_task_label.setVisible(False)
         central_layout.addWidget(self._background_task_label)
 
@@ -2380,7 +2369,7 @@ class MainWindow(QMainWindow):
         query = _normalize_search_text(self.search_edit.text())
         mode = self.search_mode_combo.currentData() or "phrase"
         filtering = bool(query)
-        style = self._SEARCH_ACTIVE_STYLE if filtering else ""
+        style = search_active_style() if filtering else ""
         if self.search_edit.styleSheet() != style:
             self.search_edit.setStyleSheet(style)
         by_id = {seg["id"]: seg for seg in self.segments}
@@ -2647,9 +2636,7 @@ class MainWindow(QMainWindow):
 
         self.reference_text_display.setPlainText(reference_text)
         if has_difference:
-            self.reference_text_display.setStyleSheet(
-                "QPlainTextEdit { background-color: #fff3cd; color: #1a1a1a; border: 1px solid #e0a800; }"
-            )
+            self.reference_text_display.setStyleSheet(reference_difference_style())
         else:
             self.reference_text_display.setStyleSheet("")
 

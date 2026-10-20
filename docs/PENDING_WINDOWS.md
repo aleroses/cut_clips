@@ -34,6 +34,7 @@ Temporada y episodio solo se ven en Serie.
 | `TBD-theme-1` | Tema oscuro: paleta, estilo Fusion y hoja global. El vídeo embebido queda fuera del QSS, solo con fondo negro. | `ui/theme.py`, `gui_app.py`, `tests/test_theme.py` |
 | `TBD-theme-2` | Iconos Lucide y un helper que arma el QIcon en normal, hover y deshabilitado. Sin QtSvg la app arranca y el botón se queda en texto. | `assets/icons/`, `ui/icons.py`, `tests/test_icons.py` |
 | `TBD-theme-3` | Los botones dejan el emoji y usan icono: probar, pausar, generar, lote, buscar, cerrar y café. | `gui_app.py` |
+| `TBD-theme-4` | Café, búsqueda, notas y la caja de diferencias usan los colores del tema. La condición de diferencia no cambia. | `ui/theme.py`, `gui_app.py`, `tests/test_theme.py` |
 
 ## Pendiente, todavía no implementado
 

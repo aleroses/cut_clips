@@ -32,6 +32,7 @@ Temporada y episodio solo se ven en Serie.
 | `63eb0b0` | Guarda la ruta del SRT externo y, al abrir, lo relee si sigue en disco. | `core/subtitle_text.py`, `gui_app.py`, `persistence/gui_bridge.py`, `tests/test_reference_cues.py` |
 | `936e18a` | Documenta el desplegable Película/Serie, los nombres de clip y TSV, el manifiesto y que Cargar externo acepta .txt, .md y .srt. | `docs/04-gui.md`, `docs/changelog.md` |
 | `TBD-theme-1` | Tema oscuro: paleta, estilo Fusion y hoja global. El vídeo embebido queda fuera del QSS, solo con fondo negro. | `ui/theme.py`, `gui_app.py`, `tests/test_theme.py` |
+| `TBD-theme-2` | Iconos Lucide y un helper que arma el QIcon en normal, hover y deshabilitado. Sin QtSvg la app arranca y el botón se queda en texto. | `assets/icons/`, `ui/icons.py`, `tests/test_icons.py` |
 
 ## Pendiente, todavía no implementado
 

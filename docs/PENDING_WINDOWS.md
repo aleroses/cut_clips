@@ -26,10 +26,10 @@ Temporada y episodio solo se ven en Serie.
 | `e92bad7` | El texto de referencia de un clip es el de los bloques que solapan su intervalo, con 0.5 s de tolerancia. | `core/subtitle_text.py`, `tests/test_reference_cues.py` |
 | `a7605e6` | El mismo botón acepta un .srt. La caja muestra el texto del intervalo del clip y un proyecto viejo abre sin ese campo. | `gui_app.py`, `persistence/gui_bridge.py`, `tests/test_reference_cues.py` |
 | `a8f6005` | Las diferencias se calculan sobre el texto limpio, así que anotaciones como reporter o screams no cuentan. | `core/subtitle_text.py`, `gui_app.py`, `tests/test_reference_cues.py` |
-| `TBD-align` | Recorta el texto de referencia al diálogo del clip, por palabras. | `core/subtitle_parser.py`, `core/subtitle_text.py`, `tests/test_reference_cues.py` |
-| `TBD-editor` | La caja de referencia usa ese recorte y se actualiza al editar el texto. | `gui_app.py` |
-| `TBD-compare` | Las diferencias se calculan contra el texto recortado. Mayúsculas, puntuación y anotaciones SDH no cuentan. | `core/subtitle_text.py`, `gui_app.py`, `tests/test_reference_cues.py` |
-| `TBD-reread` | Guarda la ruta del SRT externo y, al abrir, lo relee si sigue en disco. | `core/subtitle_text.py`, `gui_app.py`, `persistence/gui_bridge.py`, `tests/test_reference_cues.py` |
+| `aabf500` | Recorta el texto de referencia al diálogo del clip, por palabras. | `core/subtitle_parser.py`, `core/subtitle_text.py`, `tests/test_reference_cues.py` |
+| `04efaba` | La caja de referencia usa ese recorte y se actualiza al editar el texto. | `gui_app.py` |
+| `3e40dba` | Las diferencias se calculan contra el texto recortado. Mayúsculas, puntuación y anotaciones SDH no cuentan. | `core/subtitle_text.py`, `gui_app.py`, `tests/test_reference_cues.py` |
+| `63eb0b0` | Guarda la ruta del SRT externo y, al abrir, lo relee si sigue en disco. | `core/subtitle_text.py`, `gui_app.py`, `persistence/gui_bridge.py`, `tests/test_reference_cues.py` |
 
 ## Pendiente, todavía no implementado
 

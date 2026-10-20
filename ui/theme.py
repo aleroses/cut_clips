@@ -24,6 +24,7 @@ POSITIVE_HOVER = "#3EC669"
 ATTENTION = "#ff5722"
 DANGER = "#E64747"
 BORDER = "#3A3A52"
+SELECTION = "#4B4B6B"
 DIFF_BACKGROUND = "#3A3418"
 DIFF_TEXT = "#F6E7B2"
 DIFF_BORDER = "#E4F34A"
@@ -133,7 +134,7 @@ QPlainTextEdit {{
 }}
 QListWidget::item:selected,
 QListWidget::item:selected:!active {{
-    background-color: {BORDER};
+    background-color: {SELECTION};
 }}
 QPushButton {{
     background: {_vertical_gradient(BUTTON_GRADIENT_TOP, BUTTON_GRADIENT_BOTTOM)};

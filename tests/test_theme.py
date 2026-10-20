@@ -3,6 +3,7 @@
 from ui.theme import (
     ATTENTION,
     BORDER,
+    SELECTION,
     BUTTON_RADIUS,
     DANGER,
     DIFF_BACKGROUND,
@@ -57,6 +58,7 @@ def test_palette_constants():
     assert ATTENTION == "#ff5722"
     assert DANGER == "#E64747"
     assert BORDER == "#3A3A52"
+    assert SELECTION == "#4B4B6B"
     assert DIFF_BACKGROUND == "#3A3418"
     assert DIFF_TEXT == "#F6E7B2"
     assert DIFF_BORDER == "#E4F34A"
@@ -171,5 +173,8 @@ def test_stylesheet_does_not_select_video_widget():
     assert f"padding: {BUTTON_PADDING_V}px {BUTTON_PADDING_H}px" in css
     assert f"padding: {BUTTON_PADDING_V}px {LOAD_REFERENCE_PADDING_H}px" in css
     assert "QLabel#sentenceListHeader" in css
+    selected = css.split("QListWidget::item:selected", 1)[1].split("}", 1)[0]
+    assert f"background-color: {SELECTION}" in selected
+    assert BORDER not in selected
     assert "font-weight: 600" in css
     assert "QLabel {" not in css

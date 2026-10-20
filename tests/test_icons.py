@@ -46,6 +46,22 @@ def test_load_icon_with_qtsvg():
     assert samples[QIcon.Mode.Normal] != samples[QIcon.Mode.Active]
 
 
+def test_coffee_icon_accepts_a_dark_color():
+    pytest.importorskip("PySide6.QtSvg")
+    from PySide6.QtGui import QIcon
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.instance() or QApplication([])
+    icon = load_icon(
+        "coffee", normal="#1E1E2E", hover="#1E1E2E", disabled="#6E6A80"
+    )
+    assert icon is not None
+    assert not icon.isNull()
+    dark = _opaque_colors(icon, QIcon.Mode.Normal)
+    assert dark
+    assert all(max(channel) < 80 for channel in dark)
+
+
 def test_missing_icon_returns_none():
     pytest.importorskip("PySide6.QtSvg")
     from PySide6.QtWidgets import QApplication

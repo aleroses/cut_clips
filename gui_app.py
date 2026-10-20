@@ -104,6 +104,7 @@ from ui.theme import (
     TEXT,
     TEXT_DISABLED,
     TEXT_SECONDARY,
+    WINDOW,
     StatusColorDelegate,
     apply_theme,
     apply_video_background,
@@ -1444,6 +1445,7 @@ class MainWindow(QMainWindow):
             self._mpv_gl_widget = None
 
         playback_group = QGroupBox("Previsualización (mpv — no genera archivos)")
+        playback_group.setObjectName("previewGroup")
         playback_layout = QVBoxLayout(playback_group)
 
         self.position_label = QLabel("Posición: —")
@@ -1482,7 +1484,7 @@ class MainWindow(QMainWindow):
         )
         self.play_btn.clicked.connect(self.toggle_play_pause)
         actions_col.addWidget(self.play_btn)
-        self.generate_btn = QPushButton("Generar clip (WebM + MP3)")
+        self.generate_btn = QPushButton("Generar clip")
         self._set_named_icon(
             self.generate_btn,
             "save",
@@ -1491,6 +1493,7 @@ class MainWindow(QMainWindow):
             disabled=TEXT_DISABLED,
         )
         self.generate_btn.setObjectName("generateButton")
+        self.generate_btn.setToolTip("Genera .webm y .mp3 en output_files/")
         self.generate_btn.clicked.connect(self.generate_selected_clip)
         actions_col.addWidget(self.generate_btn)
         preview_main_row.addLayout(actions_col)
@@ -1524,7 +1527,6 @@ class MainWindow(QMainWindow):
         self.end_spin.valueChanged.connect(self._on_segment_bounds_changed)
 
         apply_btn = QPushButton("Aplicar tiempos a la\nlínea seleccionada")
-        apply_btn.setMinimumHeight(44)
         apply_btn.clicked.connect(self.apply_times_to_selected)
         times_col.addWidget(apply_btn)
 
@@ -1534,6 +1536,7 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(playback_group)
 
         text_group = QGroupBox("Texto y referencia")
+        text_group.setObjectName("textGroup")
         text_group_layout = QVBoxLayout(text_group)
         text_group_layout.setSpacing(4)
         text_group_layout.setContentsMargins(8, 6, 8, 6)
@@ -1554,6 +1557,7 @@ class MainWindow(QMainWindow):
         reference_btn_row = QHBoxLayout()
         reference_btn_row.addStretch()
         self.load_reference_btn = QPushButton("Cargar externo…")
+        self.load_reference_btn.setObjectName("loadReferenceButton")
         self.load_reference_btn.clicked.connect(self.load_external_reference_text)
         reference_btn_row.addWidget(self.load_reference_btn)
         text_group_layout.addLayout(reference_btn_row)
@@ -1561,6 +1565,7 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(text_group)
 
         generate_group = QGroupBox("Generación (FFmpeg — crea archivos)")
+        generate_group.setObjectName("generateGroup")
         generate_layout = QVBoxLayout(generate_group)
         gen_note = QLabel(
             "«Generar clip» escribe .webm y .mp3 en output_files/ con el mismo "
@@ -1649,6 +1654,7 @@ class MainWindow(QMainWindow):
 
         # --- Traducción opcional ---
         translate_group = QGroupBox("Traducción (opcional)")
+        translate_group.setObjectName("translateGroup")
         translate_layout = QVBoxLayout(translate_group)
 
         provider_row = QHBoxLayout()
@@ -1718,6 +1724,11 @@ class MainWindow(QMainWindow):
 
         for btn in left_content.findChildren(QPushButton):
             btn.setMaximumHeight(32)
+        # Las dos líneas no caben en 32 px cuando el botón lleva padding.
+        apply_btn.ensurePolished()
+        apply_height = apply_btn.sizeHint().height()
+        apply_btn.setMinimumHeight(apply_height)
+        apply_btn.setMaximumHeight(apply_height)
 
         left_scroll.setWidget(left_content)
         splitter.addWidget(left_scroll)
@@ -1732,6 +1743,7 @@ class MainWindow(QMainWindow):
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(4)
         self.list_header_label = QLabel("Oraciones pendientes:")
+        self.list_header_label.setObjectName("sentenceListHeader")
         header_layout.addWidget(self.list_header_label, stretch=1)
         self.search_toggle_btn = QToolButton()
         self.search_toggle_btn.setText("Buscar")
@@ -1825,6 +1837,7 @@ class MainWindow(QMainWindow):
         right_layout.addLayout(list_controls)
 
         cues_group = QGroupBox("Subtítulos incluidos en el clip")
+        cues_group.setObjectName("cuesGroup")
         cues_layout = QVBoxLayout(cues_group)
         self.cues_detail = QPlainTextEdit()
         self.cues_detail.setReadOnly(True)
@@ -1848,8 +1861,8 @@ class MainWindow(QMainWindow):
         self._set_named_icon(
             self.donation_btn,
             "coffee",
-            normal=TEXT,
-            hover=TEXT_SECONDARY,
+            normal=WINDOW,
+            hover=WINDOW,
             disabled=TEXT_DISABLED,
         )
         self.donation_btn.setToolTip(

@@ -36,6 +36,7 @@ Temporada y episodio solo se ven en Serie.
 | `b3d3371` | Los botones dejan el emoji y usan icono: probar, pausar, generar, lote, buscar, cerrar y café. | `gui_app.py` |
 | `ecbc657` | Café, búsqueda, notas y la caja de diferencias usan los colores del tema. La condición de diferencia no cambia. | `ui/theme.py`, `gui_app.py`, `tests/test_theme.py` |
 | `27c6688` | La lista pinta exportada, preview y desactualizada. El prefijo [✓] sigue en el texto y la selección no tapa el color. | `ui/theme.py`, `gui_app.py`, `tests/test_theme.py` |
+| `TBD-polish` | Degradado y padding en los botones, cabeceras más marcadas y el café como único botón relleno. | `ui/theme.py`, `gui_app.py`, `tests/test_theme.py`, `tests/test_icons.py` |
 
 ## Pendiente, todavía no implementado
 

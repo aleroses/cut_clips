@@ -18,6 +18,22 @@ from ui.theme import (
     TEXT,
     TEXT_DISABLED,
     TEXT_SECONDARY,
+    BUTTON_DISABLED_BG,
+    BUTTON_GRADIENT_BOTTOM,
+    BUTTON_GRADIENT_TOP,
+    BUTTON_HOVER_BOTTOM,
+    BUTTON_HOVER_TOP,
+    BUTTON_PADDING_H,
+    BUTTON_PADDING_V,
+    BUTTON_PRESSED_BOTTOM,
+    BUTTON_PRESSED_TOP,
+    COFFEE_BOTTOM,
+    COFFEE_HOVER_BOTTOM,
+    COFFEE_HOVER_TOP,
+    COFFEE_PRESSED_BOTTOM,
+    COFFEE_PRESSED_TOP,
+    COFFEE_TOP,
+    LOAD_REFERENCE_PADDING_H,
     VIDEO_BACKGROUND,
     VIDEO_OBJECT_NAME,
     WINDOW,
@@ -46,6 +62,22 @@ def test_palette_constants():
     assert DIFF_BORDER == "#E4F34A"
     assert VIDEO_BACKGROUND == "#000000"
     assert BUTTON_RADIUS == 6
+    assert BUTTON_GRADIENT_TOP == "#29315A"
+    assert BUTTON_GRADIENT_BOTTOM == "#232846"
+    assert BUTTON_HOVER_TOP == "#34406F"
+    assert BUTTON_HOVER_BOTTOM == "#2B3560"
+    assert BUTTON_PRESSED_TOP == "#232846"
+    assert BUTTON_PRESSED_BOTTOM == "#1E1E2E"
+    assert BUTTON_DISABLED_BG == "#28283C"
+    assert BUTTON_PADDING_V == 6
+    assert BUTTON_PADDING_H == 14
+    assert LOAD_REFERENCE_PADDING_H == 12
+    assert COFFEE_TOP == "#FF8A5B"
+    assert COFFEE_BOTTOM == "#FF5722"
+    assert COFFEE_HOVER_TOP == "#FFA07A"
+    assert COFFEE_HOVER_BOTTOM == "#FF6F3C"
+    assert COFFEE_PRESSED_TOP == "#E64A19"
+    assert COFFEE_PRESSED_BOTTOM == "#D84315"
     assert VIDEO_OBJECT_NAME == "mpvVideo"
 
 
@@ -106,9 +138,15 @@ def test_side_panel_styles_use_the_palette():
     assert TEXT_SECONDARY in search_active_style()
     assert BORDER in search_toggle_style()
     donation = donation_button_style()
-    assert ELEVATED in donation
-    assert TEXT in donation
-    assert "QPushButton:hover" in donation
+    assert COFFEE_TOP in donation
+    assert COFFEE_BOTTOM in donation
+    assert COFFEE_HOVER_TOP in donation
+    assert COFFEE_PRESSED_BOTTOM in donation
+    assert "border: none" in donation
+    assert "font-weight: bold" in donation
+    hover = donation.split("QPushButton:hover", 1)[1]
+    assert f"color: {WINDOW}" in hover
+    assert TEXT_SECONDARY not in donation
     reference = reference_difference_style()
     fingerprint = fingerprint_difference_style()
     for style in (reference, fingerprint):
@@ -125,3 +163,13 @@ def test_stylesheet_does_not_select_video_widget():
     assert "QOpenGLWidget" not in css
     assert f"#{VIDEO_OBJECT_NAME}" not in css
     assert f"border-radius: {BUTTON_RADIUS}px" in css
+    assert "qlineargradient" in css
+    assert BUTTON_GRADIENT_TOP in css
+    assert BUTTON_HOVER_TOP in css
+    assert BUTTON_PRESSED_BOTTOM in css
+    assert BUTTON_DISABLED_BG in css
+    assert f"padding: {BUTTON_PADDING_V}px {BUTTON_PADDING_H}px" in css
+    assert f"padding: {BUTTON_PADDING_V}px {LOAD_REFERENCE_PADDING_H}px" in css
+    assert "QLabel#sentenceListHeader" in css
+    assert "font-weight: 600" in css
+    assert "QLabel {" not in css

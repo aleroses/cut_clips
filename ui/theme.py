@@ -29,7 +29,29 @@ DIFF_TEXT = "#F6E7B2"
 DIFF_BORDER = "#E4F34A"
 VIDEO_BACKGROUND = "#000000"
 BUTTON_RADIUS = 6
+BUTTON_GRADIENT_TOP = "#29315A"
+BUTTON_GRADIENT_BOTTOM = "#232846"
+BUTTON_HOVER_TOP = "#34406F"
+BUTTON_HOVER_BOTTOM = "#2B3560"
+BUTTON_PRESSED_TOP = "#232846"
+BUTTON_PRESSED_BOTTOM = "#1E1E2E"
+BUTTON_DISABLED_BG = "#28283C"
+BUTTON_PADDING_V = 6
+BUTTON_PADDING_H = 14
+LOAD_REFERENCE_PADDING_H = 12
+COFFEE_TOP = "#FF8A5B"
+COFFEE_BOTTOM = "#FF5722"
+COFFEE_HOVER_TOP = "#FFA07A"
+COFFEE_HOVER_BOTTOM = "#FF6F3C"
+COFFEE_PRESSED_TOP = "#E64A19"
+COFFEE_PRESSED_BOTTOM = "#D84315"
 VIDEO_OBJECT_NAME = "mpvVideo"
+
+
+def _vertical_gradient(top: str, bottom: str) -> str:
+    return (
+        f"qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {top}, stop:1 {bottom})"
+    )
 
 
 def build_palette() -> QPalette:
@@ -114,21 +136,26 @@ QListWidget::item:selected:!active {{
     background-color: {BORDER};
 }}
 QPushButton {{
-    background-color: {ELEVATED};
+    background: {_vertical_gradient(BUTTON_GRADIENT_TOP, BUTTON_GRADIENT_BOTTOM)};
     color: {TEXT};
     border: 1px solid {BORDER};
     border-radius: {BUTTON_RADIUS}px;
+    padding: {BUTTON_PADDING_V}px {BUTTON_PADDING_H}px;
 }}
 QPushButton:hover {{
-    border-color: {TEXT_SECONDARY};
+    background: {_vertical_gradient(BUTTON_HOVER_TOP, BUTTON_HOVER_BOTTOM)};
+    border-color: {PRIMARY};
 }}
 QPushButton:pressed {{
-    background-color: {SURFACE};
+    background: {_vertical_gradient(BUTTON_PRESSED_TOP, BUTTON_PRESSED_BOTTOM)};
 }}
 QPushButton:disabled {{
     color: {TEXT_DISABLED};
-    background-color: {ELEVATED};
+    background: {BUTTON_DISABLED_BG};
     border-color: {BORDER};
+}}
+QPushButton#loadReferenceButton {{
+    padding: {BUTTON_PADDING_V}px {LOAD_REFERENCE_PADDING_H}px;
 }}
 QPushButton#previewButton,
 QPushButton#generateButton {{
@@ -140,6 +167,7 @@ QPushButton#generateButton {{
 QPushButton#previewButton:hover,
 QPushButton#generateButton:hover {{
     color: {PRIMARY_HOVER};
+    border-color: {PRIMARY};
 }}
 QPushButton#previewButton:pressed,
 QPushButton#generateButton:pressed {{
@@ -148,7 +176,10 @@ QPushButton#generateButton:pressed {{
 QPushButton#batchGenerateButton {{
     color: {POSITIVE};
 }}
-QPushButton#batchGenerateButton:hover,
+QPushButton#batchGenerateButton:hover {{
+    color: {POSITIVE_HOVER};
+    border-color: {POSITIVE};
+}}
 QPushButton#batchGenerateButton:pressed {{
     color: {POSITIVE_HOVER};
 }}
@@ -157,11 +188,13 @@ QPushButton#deleteButton {{
     color: {ATTENTION};
 }}
 QPushButton#batchCancelButton:hover,
-QPushButton#batchCancelButton:pressed,
-QPushButton#deleteButton:hover,
-QPushButton#deleteButton:pressed {{
+QPushButton#deleteButton:hover {{
     color: {ATTENTION};
     border-color: {ATTENTION};
+}}
+QPushButton#batchCancelButton:pressed,
+QPushButton#deleteButton:pressed {{
+    color: {ATTENTION};
 }}
 QPushButton#previewButton:disabled,
 QPushButton#generateButton:disabled,
@@ -169,7 +202,16 @@ QPushButton#batchGenerateButton:disabled,
 QPushButton#batchCancelButton:disabled,
 QPushButton#deleteButton:disabled {{
     color: {TEXT_DISABLED};
+    background: {BUTTON_DISABLED_BG};
     border-color: {BORDER};
+}}
+QGroupBox#previewGroup::title,
+QGroupBox#textGroup::title,
+QGroupBox#generateGroup::title,
+QGroupBox#translateGroup::title,
+QGroupBox#cuesGroup::title,
+QLabel#sentenceListHeader {{
+    font-weight: 600;
 }}
 QMenu {{
     background-color: {SURFACE};
@@ -199,21 +241,24 @@ def search_active_style() -> str:
 
 
 def donation_button_style() -> str:
-    """El hover cambia el color, no el texto."""
+    """Único botón relleno. El hover cambia el degradado, no el texto."""
     return (
         "QPushButton {"
-        f"  background-color: {ELEVATED};"
-        f"  color: {TEXT};"
-        f"  border: 1px solid {BORDER};"
+        f"  background: {_vertical_gradient(COFFEE_TOP, COFFEE_BOTTOM)};"
+        f"  color: {WINDOW};"
+        "  border: none;"
         f"  border-radius: {BUTTON_RADIUS}px;"
         "  padding: 4px 10px;"
         "  font-size: 12px;"
+        "  font-weight: bold;"
         "}"
         "QPushButton:hover {"
-        f"  color: {TEXT_SECONDARY};"
+        f"  background: {_vertical_gradient(COFFEE_HOVER_TOP, COFFEE_HOVER_BOTTOM)};"
+        f"  color: {WINDOW};"
         "}"
         "QPushButton:pressed {"
-        f"  color: {TEXT_DISABLED};"
+        f"  background: {_vertical_gradient(COFFEE_PRESSED_TOP, COFFEE_PRESSED_BOTTOM)};"
+        f"  color: {WINDOW};"
         "}"
     )
 

@@ -177,26 +177,57 @@ def _fold_for_compare(text: str) -> str:
     return " ".join("".join(kept).split())
 
 
+def _iter_reference_clips(clips):
+    """Cada clip con su texto, intervalo e índices. Un mapa de cues también vale."""
+    if isinstance(clips, dict):
+        items = (
+            (int(key), clips[key])
+            for key in sorted(clips, key=lambda key: int(key))
+        )
+        for cue_index, cue in items:
+            if cue.get("status") == "deleted":
+                continue
+            stored = cue.get("cue_indices")
+            indices = [cue_index] if not stored else [int(index) for index in stored]
+            yield {
+                "text": cue.get("text") or "",
+                "start": float(cue["start"]),
+                "end": float(cue["end"]),
+                "cue_indices": indices,
+            }
+        return
+    for clip in clips:
+        if clip.get("status") == "deleted":
+            continue
+        yield {
+            "text": clip.get("text") or "",
+            "start": float(clip["start"]),
+            "end": float(clip["end"]),
+            "cue_indices": [int(index) for index in (clip.get("cue_indices") or [])],
+        }
+
+
 def reference_differences(
-    cue_map: dict,
+    clips,
     reference_cues: list[dict],
     language: str = "en",
 ) -> list[dict]:
-    """Diferencias entre cada cue del vídeo y el texto externo que lo solapa."""
+    """Diferencias entre el texto de cada clip y el texto externo alineado."""
     differences = []
-    for cue_index in sorted(cue_map, key=lambda key: int(key)):
-        cue = cue_map[cue_index]
-        video_text = clean_subtitle_text(str(cue.get("text") or ""), language=language)
-        reference_text = reference_text_for_range(
+    for clip in _iter_reference_clips(clips):
+        video_text = clean_subtitle_text(str(clip["text"] or ""), language=language)
+        reference_text = align_reference_to_clip(
+            video_text,
             reference_cues,
-            float(cue["start"]),
-            float(cue["end"]),
+            clip["start"],
+            clip["end"],
+            language=language,
         )
         if _fold_for_compare(video_text) == _fold_for_compare(reference_text):
             continue
         differences.append({
             "video_text": video_text,
             "reference_text": reference_text,
-            "cue_indices": [int(cue_index)],
+            "cue_indices": clip["cue_indices"],
         })
     return differences

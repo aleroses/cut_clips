@@ -28,6 +28,7 @@ Temporada y episodio solo se ven en Serie.
 | `a8f6005` | Las diferencias se calculan sobre el texto limpio, así que anotaciones como reporter o screams no cuentan. | `core/subtitle_text.py`, `gui_app.py`, `tests/test_reference_cues.py` |
 | `TBD-align` | Recorta el texto de referencia al diálogo del clip, por palabras. | `core/subtitle_parser.py`, `core/subtitle_text.py`, `tests/test_reference_cues.py` |
 | `TBD-editor` | La caja de referencia usa ese recorte y se actualiza al editar el texto. | `gui_app.py` |
+| `TBD-compare` | Las diferencias se calculan contra el texto recortado. Mayúsculas, puntuación y anotaciones SDH no cuentan. | `core/subtitle_text.py`, `gui_app.py`, `tests/test_reference_cues.py` |
 
 ## Pendiente, todavía no implementado
 

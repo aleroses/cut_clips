@@ -97,6 +97,49 @@ def test_sdh_labels_are_not_differences():
     assert diffs == []
 
 
+def test_extra_external_words_are_not_a_difference():
+    cue_map = {0: {"start": 1.0, "end": 2.0, "text": "Hello there"}}
+    cues = [{"start": 1.0, "end": 2.0, "text": "Well hello there friend"}]
+    assert reference_differences(cue_map, cues) == []
+
+
+def test_one_different_word_is_a_difference():
+    cue_map = {0: {"start": 1.0, "end": 2.0, "text": "Do the things we do"}}
+    cues = [{"start": 1.0, "end": 2.0, "text": "noise Do the stuff we do tail"}]
+    assert reference_differences(cue_map, cues) == [{
+        "video_text": "Do the things we do",
+        "reference_text": "Do the stuff we do",
+        "cue_indices": [0],
+    }]
+
+
+def test_missing_word_is_a_difference():
+    clips = [{
+        "start": 1.0,
+        "end": 2.0,
+        "text": "Hello there friend",
+        "cue_indices": [4, 5],
+    }]
+    cues = [{"start": 1.0, "end": 2.0, "text": "Hello there"}]
+    assert reference_differences(clips, cues) == [{
+        "video_text": "Hello there friend",
+        "reference_text": "Hello there",
+        "cue_indices": [4, 5],
+    }]
+
+
+def test_deleted_clip_is_not_a_difference():
+    clips = [{
+        "start": 1.0,
+        "end": 2.0,
+        "text": "Hello there friend",
+        "cue_indices": [1],
+        "status": "deleted",
+    }]
+    cues = [{"start": 1.0, "end": 2.0, "text": "Hello there"}]
+    assert reference_differences(clips, cues) == []
+
+
 def test_real_dialogue_change_is_a_difference():
     cue_map = {0: {"start": 1.0, "end": 2.0, "text": "Hello there"}}
     cues = [{"start": 1.0, "end": 2.0, "text": "Goodbye there"}]

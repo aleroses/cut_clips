@@ -1942,7 +1942,7 @@ class MainWindow(QMainWindow):
             return
         language = self.subtitle_language or "en"
         checksum = align_reference_text(self.cue_map, "")["checksum"]
-        differences = reference_differences(self.cue_map, cues, language=language)
+        differences = reference_differences(self.segments, cues, language=language)
         self.reference_alignment = {
             "checksum": checksum,
             "cue_reference_text": {},
@@ -2531,6 +2531,7 @@ class MainWindow(QMainWindow):
 
         indices = seg.get("cue_indices") or []
         if "reference_cues" in self.reference_alignment:
+            self._recompute_reference_differences()
             reference_text = align_reference_to_clip(
                 str(seg.get("text") or ""),
                 self.reference_alignment.get("reference_cues") or [],
@@ -2566,6 +2567,17 @@ class MainWindow(QMainWindow):
             )
         else:
             self.reference_text_display.setStyleSheet("")
+
+    def _recompute_reference_differences(self) -> None:
+        """Recalcula differences en memoria. No toca el archivo del proyecto."""
+        alignment = self.reference_alignment
+        if not alignment or "reference_cues" not in alignment:
+            return
+        alignment["differences"] = reference_differences(
+            self.segments,
+            alignment.get("reference_cues") or [],
+            language=self.subtitle_language or "en",
+        )
 
     def _format_cue_summary(self, cue_indices: list) -> str:
         return format_cue_range_label(cue_indices)

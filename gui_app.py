@@ -129,8 +129,12 @@ from persistence.gui_bridge import (
 )
 from persistence.store import default_project_path, load_project, save_project
 from persistence.series_manifest import (
+    confirm_lower_series_manifest,
+    episode_output_has_clips,
+    highest_prior_line,
     manifest_dir_for_episode,
     read_series_manifest,
+    stale_manifest_bounds,
     write_series_manifest,
 )
 
@@ -573,6 +577,7 @@ class MainWindow(QMainWindow):
         self._project_root_dir = "."
         self._series_sequence_offset_cache: int | None = None
         self._sequence_offset_from_exports: int | None = None
+        self._stale_manifest_declined = False
         self.padding_start = 0.0
         self.padding_end = 0.0
 
@@ -3657,6 +3662,67 @@ class MainWindow(QMainWindow):
             series_name=self._effective_series_name(),
         )
 
+    def _episode_has_clips_on_disk(self) -> bool:
+        return episode_output_has_clips(
+            self._output_dir(),
+            self._effective_series_name(),
+            self._season,
+            self._episode_num,
+        )
+
+    def _ask_stale_manifest(self, manifest_last: int, prior_line: int) -> int:
+        box = QMessageBox(self)
+        box.setWindowTitle("Manifiesto de la serie")
+        box.setText(
+            f"El manifiesto indica {manifest_last}, pero los clips del capítulo "
+            f"anterior terminan en {prior_line}. ¿Continuar desde {prior_line + 1}?"
+        )
+        yes_btn = box.addButton("Sí", QMessageBox.YesRole)
+        no_btn = box.addButton("No", QMessageBox.NoRole)
+        box.setDefaultButton(no_btn)
+        box.exec()
+        if box.clickedButton() is yes_btn:
+            return QMessageBox.Yes
+        return QMessageBox.No
+
+    def _maybe_repair_stale_manifest(self) -> None:
+        """Pregunta si el manifiesto quedó por encima de los capítulos anteriores."""
+        if self._media_kind == "movie" or self._stale_manifest_declined:
+            return
+        if self._episode_has_exported_clips() or self._episode_has_clips_on_disk():
+            return
+        series_dir = self._series_dir()
+        if not series_dir:
+            return
+        series_name = self._effective_series_name()
+        prior = highest_prior_line(
+            series_dir, series_name, self._season, self._episode_num
+        )
+        manifest = read_series_manifest(
+            series_dir, expected_series_name=series_name
+        )
+        last = None if manifest is None else manifest.get("last_sequence_number")
+        bounds = stale_manifest_bounds(
+            media_kind=self._media_kind,
+            manifest_last=last,
+            prior_line=prior,
+            episode_has_clips=False,
+        )
+        if bounds is None:
+            return
+        manifest_last, prior_line = bounds
+        if self._ask_stale_manifest(manifest_last, prior_line) != QMessageBox.Yes:
+            self._stale_manifest_declined = True
+            return
+        confirm_lower_series_manifest(
+            series_dir,
+            prior_line,
+            series_name=series_name,
+            accept=True,
+        )
+        self._series_sequence_offset_cache = None
+        self._sequence_offset_from_exports = None
+
     def _series_numbering_status_suffix(self) -> str:
         offset = self._series_sequence_offset()
         if offset <= 0:
@@ -3802,6 +3868,7 @@ class MainWindow(QMainWindow):
             )
             return
 
+        self._maybe_repair_stale_manifest()
         series_name = self._effective_series_name()
         file_episode_label = self._file_episode_label()
         output_dir = self._output_dir()
@@ -3961,6 +4028,7 @@ class MainWindow(QMainWindow):
             return
         cut_start, cut_end = window
 
+        self._maybe_repair_stale_manifest()
         series_name = self._effective_series_name()
         file_episode_label = self._file_episode_label()
         output_dir = self._output_dir()

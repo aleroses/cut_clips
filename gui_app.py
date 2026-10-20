@@ -75,6 +75,14 @@ from core.naming import (
     tsv_filename,
     tsv_lock_after_mode_change,
 )
+from core.preview_marker import (
+    preview_mark_after_delete,
+    preview_mark_after_edit,
+    preview_mark_after_probe,
+    preview_mark_after_select,
+    preview_mark_after_stop,
+    row_shows_preview_mark,
+)
 from core.reference_alignment import align_reference_text
 from core.segment_selection import next_id_after_removal
 from core.subtitle_text import (
@@ -2253,7 +2261,7 @@ class MainWindow(QMainWindow):
     def _segment_list_label(self, seg: dict) -> str:
         if seg["status"] == "outdated":
             tag = "[OUTDATED] "
-        elif seg["id"] == self._preview_display_id:
+        elif row_shows_preview_mark(self._preview_display_id, seg["id"]):
             tag = "[PREVIEW] "
         else:
             tag = ""
@@ -2293,7 +2301,9 @@ class MainWindow(QMainWindow):
                     item.setData(Qt.UserRole, seg["id"])
                     color = sentence_foreground(
                         seg["status"],
-                        preview=seg["id"] == self._preview_display_id,
+                        preview=row_shows_preview_mark(
+                            self._preview_display_id, seg["id"]
+                        ),
                     )
                     if color:
                         item.setForeground(QColor(color))
@@ -2508,10 +2518,9 @@ class MainWindow(QMainWindow):
         self._update_reference_text_display(seg)
 
     def on_segment_selected(self, row):
-        had_preview_tag = self._preview_display_id is not None
-        self._clear_preview_display()
+        self._preview_display_id = preview_mark_after_select(self._preview_display_id)
         reverted_preview = self._revert_preview_status_on_others()
-        needs_list_refresh = had_preview_tag or reverted_preview
+        needs_list_refresh = reverted_preview
         seg = self._get_selected_segment()
         self._text_edit_undo_pending = False
         if seg is None:
@@ -2894,14 +2903,18 @@ class MainWindow(QMainWindow):
     def _drop_removed_preview(self, seg: dict) -> None:
         seg.pop("preview_start", None)
         seg.pop("preview_end", None)
-        if self._preview_display_id == seg["id"]:
-            self._preview_display_id = None
+        self._preview_display_id = preview_mark_after_delete(
+            self._preview_display_id, seg["id"]
+        )
 
     def _clear_stale_preview_display(self, seg: dict) -> None:
-        if self._preview_display_id != seg["id"]:
-            return
-        if seg.get("preview_start") is None or seg.get("preview_end") is None:
-            self._preview_display_id = None
+        kept_bounds = (
+            seg.get("preview_start") is not None
+            and seg.get("preview_end") is not None
+        )
+        self._preview_display_id = preview_mark_after_edit(
+            self._preview_display_id, seg["id"], kept_bounds=kept_bounds
+        )
 
     def _clear_editor_fields(self) -> None:
         self.start_spin.blockSignals(True)
@@ -2960,13 +2973,18 @@ class MainWindow(QMainWindow):
         self._update_preview_controls()
 
     def _finish_structure_edit(
-        self, *, select_id: int | None, removed: dict | None = None
+        self,
+        *,
+        select_id: int | None,
+        removed: dict | None = None,
+        clear_stale_preview: bool = True,
     ) -> None:
         if removed is not None:
             self._drop_removed_preview(removed)
-        current = self._segment_by_id(select_id)
-        if current is not None:
-            self._clear_stale_preview_display(current)
+        if clear_stale_preview:
+            current = self._segment_by_id(select_id)
+            if current is not None:
+                self._clear_stale_preview_display(current)
         if select_id is None:
             self._refresh_list(clear_selection=True)
         else:
@@ -2981,7 +2999,9 @@ class MainWindow(QMainWindow):
         next_id = next_id_after_removal(visible_ids, seg["id"])
         self._push_undo()
         seg["status"] = "deleted"
-        self._finish_structure_edit(select_id=next_id, removed=seg)
+        self._finish_structure_edit(
+            select_id=next_id, removed=seg, clear_stale_preview=False
+        )
         self._mark_project_modified()
 
     # -- Previsualización mpv (sin cortar nada) ------------------------------
@@ -3076,7 +3096,7 @@ class MainWindow(QMainWindow):
             )
 
     def _mark_segment_previewed(self, seg, start: float, end: float):
-        self._preview_display_id = seg["id"]
+        self._preview_display_id = preview_mark_after_probe(seg["id"])
         if seg["status"] not in ("exported", "outdated"):
             seg["status"] = "preview"
             seg["preview_start"] = start
@@ -3175,7 +3195,7 @@ class MainWindow(QMainWindow):
             self._stop_playback_timer()
             self._update_play_button()
             self._update_position_label()
-        self._preview_display_id = None
+        self._preview_display_id = preview_mark_after_stop()
         self._refresh_list(select_id=self._current_selected_id())
 
     def seek_relative(self, delta: float):

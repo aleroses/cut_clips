@@ -4,16 +4,33 @@ import json
 import os
 from pathlib import Path
 
-from persistence.series_manifest import read_series_manifest, write_series_manifest
+from persistence.series_manifest import (
+    manifest_dir_for_episode,
+    read_series_manifest,
+    write_series_manifest,
+)
 from tools.rebuild_series_manifest import main, resolve_last_sequence, scan_episode_lines
 
 SERIES = "Todd_McFarlanes_Spawn"
+
+
+def _as_root(monkeypatch, root: Path) -> None:
+    monkeypatch.setattr(
+        "persistence.series_manifest.project_root",
+        lambda: str(root),
+    )
 
 
 def _clip(directory: Path, episode: str, line: int) -> None:
     output = directory / episode / "output_files"
     output.mkdir(parents=True)
     (output / f"{SERIES}_{episode}_Line_{line:04d}.webm").write_bytes(b"webm")
+
+
+def _clip_in(episode_dir: Path, label: str, line: int) -> None:
+    output = episode_dir / "output_files"
+    output.mkdir(parents=True)
+    (output / f"{SERIES}_{label}_Line_{line:04d}.webm").write_bytes(b"webm")
 
 
 def _layout(root: Path) -> Path:
@@ -85,3 +102,74 @@ def test_missing_clips_and_missing_last_line_fail_without_inventing(tmp_path: Pa
     assert not (series / "series_manifest.json").exists()
     names = os.listdir(series)
     assert names == []
+
+
+def test_rebuild_lands_in_the_same_dir_as_manifest_dir_for_episode(
+    tmp_path: Path, monkeypatch
+):
+    project = tmp_path / "proj"
+    episode = project / "data" / "Show" / "S01E01"
+    _as_root(monkeypatch, project)
+    _clip_in(episode, "S01E01", 12)
+    series = episode.parent
+    code = main(["--series-dir", str(series), "--series-name", SERIES, "--apply"])
+    assert code == 0
+    expected = Path(manifest_dir_for_episode(str(episode), "series"))
+    assert expected == series
+    assert (expected / "series_manifest.json").is_file()
+    assert not (project / "series_manifest.json").exists()
+
+
+def test_rebuild_loose_video_in_data_stays_out_of_the_project_root(
+    tmp_path: Path, monkeypatch
+):
+    project = tmp_path / "proj"
+    episode = project / "data"
+    _as_root(monkeypatch, project)
+    _clip_in(episode, "S01E01", 4)
+    code = main(["--series-dir", str(project), "--series-name", SERIES, "--apply"])
+    assert code == 0
+    expected = Path(manifest_dir_for_episode(str(episode), "series"))
+    assert expected == episode
+    assert (episode / "series_manifest.json").is_file()
+    assert not (project / "series_manifest.json").exists()
+
+
+def test_rebuild_episode_under_the_root_stays_inside_the_episode(
+    tmp_path: Path, monkeypatch
+):
+    project = tmp_path / "proj"
+    episode = project / "S01E01"
+    _as_root(monkeypatch, project)
+    _clip_in(episode, "S01E01", 8)
+    code = main(["--series-dir", str(project), "--series-name", SERIES, "--apply"])
+    assert code == 0
+    expected = Path(manifest_dir_for_episode(str(episode), "series"))
+    assert expected == episode
+    assert (episode / "series_manifest.json").is_file()
+    assert not (project / "series_manifest.json").exists()
+
+
+def test_rebuild_video_in_the_project_root_writes_nothing(tmp_path: Path, monkeypatch):
+    project = tmp_path / "proj"
+    project.mkdir()
+    _as_root(monkeypatch, project)
+    _clip_in(project, "S01E01", 3)
+    code = main(["--series-dir", str(tmp_path), "--series-name", SERIES, "--apply"])
+    assert code == 1
+    assert manifest_dir_for_episode(str(project), "series") is None
+    assert list(tmp_path.rglob("series_manifest.json")) == []
+
+
+def test_rebuild_external_series_stays_next_to_the_episodes(tmp_path: Path, monkeypatch):
+    project = tmp_path / "proj"
+    project.mkdir()
+    episode = tmp_path / "library" / "Show" / "S01E02"
+    _as_root(monkeypatch, project)
+    _clip_in(episode, "S01E02", 9)
+    series = episode.parent
+    code = main(["--series-dir", str(series), "--series-name", SERIES, "--apply"])
+    assert code == 0
+    expected = Path(manifest_dir_for_episode(str(episode), "series"))
+    assert expected == series
+    assert (series / "series_manifest.json").is_file()

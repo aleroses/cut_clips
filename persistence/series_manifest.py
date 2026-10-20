@@ -13,18 +13,35 @@ def series_manifest_path(series_dir: str) -> str:
     return os.path.join(series_dir, MANIFEST_FILENAME)
 
 
+def _norm(path: str) -> str:
+    return os.path.normcase(os.path.normpath(os.path.abspath(path)))
+
+
+def project_root() -> str:
+    """Raíz del repositorio. Los tests pueden sustituirla."""
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
 def manifest_dir_for_episode(episode_dir: str, media_kind: str) -> str | None:
     """Carpeta del manifiesto, o None si este episodio no debe usarlo.
 
-    Una película no tiene capítulo siguiente. Una serie sigue usando el
-    directorio padre del episodio, igual que antes.
+    Una película no tiene capítulo siguiente. Una serie deja el archivo
+    en la carpeta padre del episodio. Si esa carpeta se llama data, o si
+    el padre es la raíz del proyecto, el archivo se queda en el episodio.
+    Nunca se escribe en la raíz del proyecto.
     """
     if media_kind == "movie":
         return None
     episode_dir = os.path.abspath(episode_dir)
-    parent = os.path.dirname(episode_dir)
-    if not parent or os.path.normpath(parent) == os.path.normpath(episode_dir):
+    if _norm(episode_dir) == _norm(project_root()):
         return None
+    parent = os.path.dirname(episode_dir)
+    if not parent or _norm(parent) == _norm(episode_dir):
+        return None
+    named_data = os.path.basename(episode_dir).lower() == "data"
+    parent_is_root = _norm(parent) == _norm(project_root())
+    if named_data or parent_is_root:
+        return episode_dir
     return parent
 
 

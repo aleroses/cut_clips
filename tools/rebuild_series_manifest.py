@@ -22,6 +22,7 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
+from persistence import series_manifest as series_manifest_api
 from persistence.series_manifest import (
     read_series_manifest,
     series_manifest_path,
@@ -31,18 +32,61 @@ from persistence.series_manifest import (
 _CLIP_RE = re.compile(r"_S(\d{2})E(\d{2})_Line_(\d+)\.(?:webm|mp3)$", re.IGNORECASE)
 
 
+def episode_dirs(series_dir: str) -> list[str]:
+    """Capítulos con output_files/ bajo series_dir.
+
+    Si no hay subcarpetas así, y la propia carpeta tiene output_files/,
+    esa carpeta es el episodio.
+    """
+    series_dir = os.path.abspath(series_dir)
+    if not os.path.isdir(series_dir):
+        return []
+    found: list[str] = []
+    for name in sorted(os.listdir(series_dir)):
+        episode_dir = os.path.join(series_dir, name)
+        if os.path.isdir(os.path.join(episode_dir, "output_files")):
+            found.append(episode_dir)
+    if found:
+        return found
+    if os.path.isdir(os.path.join(series_dir, "output_files")):
+        return [series_dir]
+    return []
+
+
+def resolve_manifest_dir(series_dir: str) -> str | None:
+    """Carpeta donde escribir el manifiesto, o None si no hay un solo sitio seguro.
+
+    Usa manifest_dir_for_episode. No devuelve la raíz del proyecto.
+    """
+    episodes = episode_dirs(series_dir)
+    if not episodes:
+        return None
+    chosen: list[str] = []
+    root = os.path.normcase(
+        os.path.normpath(os.path.abspath(series_manifest_api.project_root()))
+    )
+    for episode in episodes:
+        dest = series_manifest_api.manifest_dir_for_episode(episode, "series")
+        if not dest:
+            return None
+        dest_abs = os.path.abspath(dest)
+        if os.path.normcase(os.path.normpath(dest_abs)) == root:
+            return None
+        chosen.append(dest_abs)
+    first = chosen[0]
+    first_norm = os.path.normcase(os.path.normpath(first))
+    for path in chosen[1:]:
+        if os.path.normcase(os.path.normpath(path)) != first_norm:
+            return None
+    return first
+
+
 def scan_episode_lines(series_dir: str, series_name: str) -> dict[tuple[int, int], int]:
     """Mayor Line_ de cada capítulo que tenga clips en output_files/."""
     found: dict[tuple[int, int], int] = {}
-    series_dir = os.path.abspath(series_dir)
     prefix = series_name + "_"
-    if not os.path.isdir(series_dir):
-        return found
-    for name in sorted(os.listdir(series_dir)):
-        episode_dir = os.path.join(series_dir, name)
+    for episode_dir in episode_dirs(series_dir):
         output_dir = os.path.join(episode_dir, "output_files")
-        if not os.path.isdir(output_dir):
-            continue
         for filename in os.listdir(output_dir):
             if not filename.startswith(prefix):
                 continue
@@ -137,9 +181,18 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
-    path = series_manifest_path(series_dir)
+    manifest_dir = resolve_manifest_dir(series_dir)
+    if manifest_dir is None:
+        print(
+            "No se escribió el manifiesto. Esa ruta caería en la raíz del proyecto "
+            "o los episodios no comparten carpeta.",
+            file=sys.stderr,
+        )
+        return 1
+
+    path = series_manifest_path(manifest_dir)
     payload = manifest_payload(last_sequence, args.series_name)
-    current = read_series_manifest(series_dir)
+    current = read_series_manifest(manifest_dir)
     stored_name = (current or {}).get("series_name")
     if stored_name and stored_name != args.series_name:
         print(
@@ -167,11 +220,11 @@ def main(argv: list[str] | None = None) -> int:
 
     previous = int((current or {}).get("last_sequence_number", 0))
     write_series_manifest(
-        series_dir,
+        manifest_dir,
         last_sequence,
         series_name=args.series_name,
     )
-    written = read_series_manifest(series_dir) or {}
+    written = read_series_manifest(manifest_dir) or {}
     kept = int(written.get("last_sequence_number", last_sequence))
     if kept > last_sequence:
         print(

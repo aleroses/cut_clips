@@ -37,10 +37,10 @@ Temporada y episodio solo se ven en Serie.
 | `ecbc657` | Café, búsqueda, notas y la caja de diferencias usan los colores del tema. La condición de diferencia no cambia. | `ui/theme.py`, `gui_app.py`, `tests/test_theme.py` |
 | `27c6688` | La lista pinta exportada, preview y desactualizada. El prefijo [✓] sigue en el texto y la selección no tapa el color. | `ui/theme.py`, `gui_app.py`, `tests/test_theme.py` |
 | `4a93df0` | Degradado y padding en los botones, cabeceras más marcadas y el café como único botón relleno. | `ui/theme.py`, `gui_app.py`, `tests/test_theme.py`, `tests/test_icons.py` |
+| `TBD-manifest` | El manifiesto de una serie no se escribe en la raíz del proyecto. Un vídeo suelto en `data/` lo deja dentro de `data/`. | `persistence/series_manifest.py`, `tools/rebuild_series_manifest.py`, `tests/test_series_manifest.py`, `tests/test_rebuild_series_manifest.py`, `docs/20-rebuild-series-manifest.md` |
 
 ## Pendiente, todavía no implementado
 
-- Manifiesto de serie dentro de una carpeta llamada `data/` (regla de portability, aún no portada). En `debian` el manifiesto sigue en la carpeta padre del episodio.
 - Opcional: ofrecer ocultar o filtrar líneas sin audio, del tipo «Captions made possible by...», al abrir un vídeo.
 - Escape de campos del TSV con `csv.writer`.
 

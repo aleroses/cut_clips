@@ -30,13 +30,13 @@ Temporada y episodio solo se ven en Serie.
 | `04efaba` | La caja de referencia usa ese recorte y se actualiza al editar el texto. | `gui_app.py` |
 | `3e40dba` | Las diferencias se calculan contra el texto recortado. Mayúsculas, puntuación y anotaciones SDH no cuentan. | `core/subtitle_text.py`, `gui_app.py`, `tests/test_reference_cues.py` |
 | `63eb0b0` | Guarda la ruta del SRT externo y, al abrir, lo relee si sigue en disco. | `core/subtitle_text.py`, `gui_app.py`, `persistence/gui_bridge.py`, `tests/test_reference_cues.py` |
+| `TBD-docs` | Documenta el desplegable Película/Serie, los nombres de clip y TSV, el manifiesto y que Cargar externo acepta .txt, .md y .srt. | `docs/04-gui.md`, `docs/changelog.md` |
 
 ## Pendiente, todavía no implementado
 
 - Manifiesto de serie dentro de una carpeta llamada `data/` (regla de portability, aún no portada). En `debian` el manifiesto sigue en la carpeta padre del episodio.
 - Opcional: ofrecer ocultar o filtrar líneas sin audio, del tipo «Captions made possible by...», al abrir un vídeo.
 - Escape de campos del TSV con `csv.writer`.
-- Paso 7: apartado de nombres película/serie en `docs/04-gui.md` y `docs/changelog.md`.
 - Rediseño oscuro de la ventana, con iconos.
 
 Cada commit nuevo de funcionalidad en `debian` debe añadir aquí su hash y sus archivos.

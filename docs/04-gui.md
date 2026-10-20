@@ -183,7 +183,7 @@ Panel **Generación (FFmpeg)**:
 
 ### Naming de archivos
 
-Los clips generados usan el formato CLI:
+`cut_clips.py` sigue el formato histórico `S01-Ep01`. La ventana usa `S01E01`, o ningún episodio si es una película; ver «Película y serie».
 
 ```text
 {serie}_{S01-Ep01}_Line_{id:04d}.webm
@@ -198,6 +198,42 @@ Ejemplo: `Spawn_Anki_Video_S01-Ep01_Line_0003.webm`
 - **Generar clip** aplica padding respetando límites de la línea anterior/siguiente
   (misma lógica que `compute_padded_windows()` en el CLI).
 - El TSV exportado referencia los nombres CLI y la etiqueta de episodio.
+
+## Película y serie
+
+En **Generación**, el desplegable es **Película** o **Serie**. **Temporada** y **Episodio** solo aparecen en Serie.
+
+Al abrir un vídeo, el modo sale del nombre del archivo y del título del contenedor. Gana el primero que tenga `SxxExx` o `Episode N`. `Episode N` usa la temporada 1. Si ninguno trae patrón, es película: `Ratatouille`, `Blade Runner 2049` o `Apollo 13` no se leen como episodio.
+
+Nombres que escribe la ventana, con la etiqueta compacta `S01E01`:
+
+```text
+Serie_S01E01_Line_0001.webm
+Serie_S01E01_Line_0001.mp3
+Serie_S01E01_Titulo_anki.tsv
+```
+
+Película, sin etiqueta de episodio:
+
+```text
+Nombre_Line_0001.webm
+Nombre_Line_0001.mp3
+Nombre_anki.tsv
+```
+
+Si el contenedor tiene título, ese título se inserta antes de `_anki.tsv` en los dos modos (`Nombre_Titulo_anki.tsv`).
+
+Si el proyecto ya tiene clips generados, cambiar el desplegable abre **Cambiar película o serie**. Esos clips conservan su ruta. Los clips nuevos usan el modo elegido. Si el TSV ya existe, no cambia de nombre.
+
+Una película no lee ni escribe `series_manifest.json`. Una serie lo guarda en la carpeta padre del episodio. Si se borra, se reconstruye en seco con:
+
+```bash
+python3 tools/rebuild_series_manifest.py --series-dir /ruta/a/la/serie --series-name Nombre
+```
+
+`--apply` lo escribe. El detalle está en `docs/20-rebuild-series-manifest.md`.
+
+**Cargar externo** acepta `.txt`, `.md` y `.srt`.
 
 ## Fase 11 — Detección OUTDATED (fingerprint)
 

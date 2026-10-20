@@ -638,3 +638,31 @@ python3 gui_app.py
 python3 -X faulthandler gui_app.py
 # Abrir vídeo A → Abrir vídeo B → Abrir proyecto .json → Cerrar app (sin munmap_chunk)
 ```
+
+---
+
+## Película, serie y referencia externa
+
+**Fecha:** 2026-10-19
+
+### Qué se documentó
+
+- Desplegable Película/Serie. Temporada y Episodio solo se ven en Serie.
+- El modo se detecta por `SxxExx` o `Episode N` en el nombre del archivo o en el título del contenedor. Sin patrón, es película.
+- Serie: `Serie_S01E01_Line_0001.webm` y `Serie_S01E01_Titulo_anki.tsv`. Película: `Nombre_Line_0001.webm` y `Nombre_anki.tsv`.
+- Los clips ya generados no se renombran al cambiar de modo. El diálogo pide confirmación. El TSV existente conserva su nombre.
+- Una película no usa `series_manifest.json`. `tools/rebuild_series_manifest.py` reconstruye uno borrado, en seco salvo `--apply`.
+- Cargar externo acepta `.txt`, `.md` y `.srt`.
+
+### Archivos modificados
+
+- `docs/04-gui.md`
+- `docs/changelog.md`
+- `docs/PENDING_WINDOWS.md`
+
+### Cómo probar
+
+```bash
+python3 gui_app.py
+python3 -c "from core.naming import clip_video_filename, tsv_filename; print(clip_video_filename('Serie', 'S01E01', 1)); print(tsv_filename('Serie', 'S01E01', 'Titulo')); print(clip_video_filename('Nombre', '', 1)); print(tsv_filename('Nombre', ''))"
+```

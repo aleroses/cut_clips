@@ -42,7 +42,7 @@ Temporada y episodio solo se ven en Serie.
 | `7ee661c` | Antes del primer clip, avisa si el manifiesto quedó por encima de los capítulos anteriores. Sí lo baja y deja una copia .bak. | `persistence/series_manifest.py`, `gui_app.py`, `tests/test_stale_manifest.py` |
 | `4098328` | Documenta que borrar los clips de prueba deja el manifiesto alto, y que `--force` no baja el número. | `docs/20-rebuild-series-manifest.md` |
 | `6258c71` | La marca [PREVIEW] sigue en el clip que se está probando al elegir otra fila. Se quita al probar otra, al detener o al eliminar esa línea. | `core/preview_marker.py`, `gui_app.py`, `tests/test_preview_marker.py` |
-| `TBD-selection` | El fondo de la fila seleccionada pasa de #3A3A52 a #4B4B6B. El texto conserva el color de preview, exportada o desactualizada. | `ui/theme.py`, `tests/test_theme.py` |
+| `55438a2` | El fondo de la fila seleccionada pasa de #3A3A52 a #4B4B6B. El texto conserva el color de preview, exportada o desactualizada. | `ui/theme.py`, `tests/test_theme.py` |
 
 ## Pendiente, todavía no implementado
 

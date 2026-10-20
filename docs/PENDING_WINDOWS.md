@@ -40,7 +40,7 @@ Temporada y episodio solo se ven en Serie.
 | `e2082a9` | El manifiesto de una serie no se escribe en la raíz del proyecto. Un vídeo suelto en `data/` lo deja dentro de `data/`. | `persistence/series_manifest.py`, `tools/rebuild_series_manifest.py`, `tests/test_series_manifest.py`, `tests/test_rebuild_series_manifest.py`, `docs/20-rebuild-series-manifest.md` |
 | `2baefa8` | El repositorio incluye `data/` vacía. Las series van en `data/Serie/SxxExx/` y las películas en `data/Pelicula/`. | `data/.gitkeep`, `.gitignore`, `README.md`, `docs/04-gui.md` |
 | `7ee661c` | Antes del primer clip, avisa si el manifiesto quedó por encima de los capítulos anteriores. Sí lo baja y deja una copia .bak. | `persistence/series_manifest.py`, `gui_app.py`, `tests/test_stale_manifest.py` |
-| `TBD-recovery` | Documenta que borrar los clips de prueba deja el manifiesto alto, y que `--force` no baja el número. | `docs/20-rebuild-series-manifest.md` |
+| `4098328` | Documenta que borrar los clips de prueba deja el manifiesto alto, y que `--force` no baja el número. | `docs/20-rebuild-series-manifest.md` |
 
 ## Pendiente, todavía no implementado
 

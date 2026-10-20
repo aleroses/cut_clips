@@ -93,6 +93,7 @@ from ui.mpv_embed import configure_mpv_environment, mpv_player_kwargs
 from ui.parser_options_widget import ParserOptions
 from ui.subtitle_load_dialog import SubtitleLoadDialog
 from ui.srt_split_dialog import SrtSplitDialog
+from ui.theme import apply_theme, apply_video_background
 from ui.undo_stack import EditHistory
 from persistence.gui_bridge import (
     apply_outdated_status,
@@ -1401,6 +1402,7 @@ class MainWindow(QMainWindow):
         left_scroll.setWidgetResizable(True)
         left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         left_content = QWidget()
+        left_content.setObjectName("sidePanel")
         left_layout = QVBoxLayout(left_content)
 
         self._use_opengl_embed = _should_use_opengl_embed()
@@ -1411,7 +1413,7 @@ class MainWindow(QMainWindow):
                 locale_fn=_ensure_mpv_numeric_locale,
                 log_handler=_mpv_log,
             )
-            self._mpv_gl_widget.setStyleSheet("background-color: black;")
+            apply_video_background(self._mpv_gl_widget)
             self._mpv_gl_widget.setMinimumHeight(300)
             left_layout.addWidget(self._mpv_gl_widget)
             self.video_frame = None
@@ -1419,7 +1421,7 @@ class MainWindow(QMainWindow):
             self.video_frame = QFrame()
             self.video_frame.setAttribute(Qt.WA_DontCreateNativeAncestors, True)
             self.video_frame.setAttribute(Qt.WA_NativeWindow, True)
-            self.video_frame.setStyleSheet("background-color: black;")
+            apply_video_background(self.video_frame)
             self.video_frame.setMinimumHeight(300)
             left_layout.addWidget(self.video_frame)
             self._mpv_gl_widget = None
@@ -1443,12 +1445,14 @@ class MainWindow(QMainWindow):
         preview_main_row = QHBoxLayout()
         actions_col = QVBoxLayout()
         self.preview_btn = QPushButton("🔁 Probar clip")
+        self.preview_btn.setObjectName("previewButton")
         self.preview_btn.clicked.connect(self.preview_selected_clip)
         actions_col.addWidget(self.preview_btn)
         self.play_btn = QPushButton("⏸ Pausar")
         self.play_btn.clicked.connect(self.toggle_play_pause)
         actions_col.addWidget(self.play_btn)
         self.generate_btn = QPushButton("💾 Generar clip (WebM + MP3)")
+        self.generate_btn.setObjectName("generateButton")
         self.generate_btn.clicked.connect(self.generate_selected_clip)
         actions_col.addWidget(self.generate_btn)
         preview_main_row.addLayout(actions_col)
@@ -1581,9 +1585,11 @@ class MainWindow(QMainWindow):
 
         batch_row = QHBoxLayout()
         self.batch_generate_btn = QPushButton("⚡ Generar todos pendientes")
+        self.batch_generate_btn.setObjectName("batchGenerateButton")
         self.batch_generate_btn.clicked.connect(self.generate_all_pending)
         batch_row.addWidget(self.batch_generate_btn)
         self.batch_cancel_btn = QPushButton("Cancelar lote")
+        self.batch_cancel_btn.setObjectName("batchCancelButton")
         self.batch_cancel_btn.setEnabled(False)
         self.batch_cancel_btn.clicked.connect(self.cancel_batch_generation)
         batch_row.addWidget(self.batch_cancel_btn)
@@ -1667,13 +1673,13 @@ class MainWindow(QMainWindow):
 
         for btn in left_content.findChildren(QPushButton):
             btn.setMaximumHeight(32)
-        self.generate_btn.setStyleSheet("font-weight: bold;")
 
         left_scroll.setWidget(left_content)
         splitter.addWidget(left_scroll)
 
         # --- Panel derecho: lista dinámica de trabajo ---
         right = QWidget()
+        right.setObjectName("sidePanel")
         right_layout = QVBoxLayout(right)
 
         header_row = QWidget()
@@ -1750,6 +1756,7 @@ class MainWindow(QMainWindow):
         split_btn = QPushButton("Dividir clip")
         split_btn.clicked.connect(self.split_selected_clip)
         delete_btn = QPushButton("Eliminar")
+        delete_btn.setObjectName("deleteButton")
         delete_btn.clicked.connect(self.delete_selected)
         list_controls.addWidget(merge_btn)
         list_controls.addWidget(split_btn)
@@ -4230,6 +4237,7 @@ def main():
     configure_mpv_environment()
     _configure_qt_platform_for_mpv()
     app = QApplication(sys.argv)
+    apply_theme(app)
     _ensure_mpv_numeric_locale()
     window = MainWindow()
     window.show()

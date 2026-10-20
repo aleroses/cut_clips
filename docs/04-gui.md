@@ -8,7 +8,7 @@ Documentación de la aplicación PySide6 (`gui_app.py`).
 python3 gui_app.py
 ```
 
-Requisitos: PySide6, python-mpv, libmpv, ffmpeg/ffprobe.
+Requisitos: PySide6, python-mpv, libmpv, ffmpeg/ffprobe. Los iconos usan QtSvg: en Debian por apt, `python3-pyside6.qtsvg`. El wheel de pip y Windows ya lo traen. Sin QtSvg la ventana arranca y los botones quedan solo con texto.
 
 ## Flujo principal
 
@@ -283,7 +283,7 @@ Desde la raíz del proyecto:
 ```bash
 cd /home/ale/Documents/projects/anki_video_tool
 pip install -r requirements.txt   # PySide6, python-mpv, deepl (opcional)
-sudo apt install ffmpeg libmpv2    # sistema: ffprobe, ffmpeg, mpv
+sudo apt install ffmpeg libmpv2 python3-pyside6.qtsvg    # ffprobe, ffmpeg, mpv, iconos
 
 python3 gui_app.py
 ```

@@ -31,17 +31,18 @@ Temporada y episodio solo se ven en Serie.
 | `3e40dba` | Las diferencias se calculan contra el texto recortado. Mayúsculas, puntuación y anotaciones SDH no cuentan. | `core/subtitle_text.py`, `gui_app.py`, `tests/test_reference_cues.py` |
 | `63eb0b0` | Guarda la ruta del SRT externo y, al abrir, lo relee si sigue en disco. | `core/subtitle_text.py`, `gui_app.py`, `persistence/gui_bridge.py`, `tests/test_reference_cues.py` |
 | `936e18a` | Documenta el desplegable Película/Serie, los nombres de clip y TSV, el manifiesto y que Cargar externo acepta .txt, .md y .srt. | `docs/04-gui.md`, `docs/changelog.md` |
-| `TBD-theme-1` | Tema oscuro: paleta, estilo Fusion y hoja global. El vídeo embebido queda fuera del QSS, solo con fondo negro. | `ui/theme.py`, `gui_app.py`, `tests/test_theme.py` |
-| `TBD-theme-2` | Iconos Lucide y un helper que arma el QIcon en normal, hover y deshabilitado. Sin QtSvg la app arranca y el botón se queda en texto. | `assets/icons/`, `ui/icons.py`, `tests/test_icons.py` |
-| `TBD-theme-3` | Los botones dejan el emoji y usan icono: probar, pausar, generar, lote, buscar, cerrar y café. | `gui_app.py` |
-| `TBD-theme-4` | Café, búsqueda, notas y la caja de diferencias usan los colores del tema. La condición de diferencia no cambia. | `ui/theme.py`, `gui_app.py`, `tests/test_theme.py` |
-| `TBD-theme-5` | La lista pinta exportada, preview y desactualizada. El prefijo [✓] sigue en el texto y la selección no tapa el color. | `ui/theme.py`, `gui_app.py`, `tests/test_theme.py` |
+| `3ca288b` | Tema oscuro: paleta, estilo Fusion y hoja global. El vídeo embebido queda fuera del QSS, solo con fondo negro. | `ui/theme.py`, `gui_app.py`, `tests/test_theme.py` |
+| `25b08ff` | Iconos Lucide y un helper que arma el QIcon en normal, hover y deshabilitado. Sin QtSvg la app arranca y el botón se queda en texto. | `assets/icons/`, `ui/icons.py`, `tests/test_icons.py` |
+| `b3d3371` | Los botones dejan el emoji y usan icono: probar, pausar, generar, lote, buscar, cerrar y café. | `gui_app.py` |
+| `ecbc657` | Café, búsqueda, notas y la caja de diferencias usan los colores del tema. La condición de diferencia no cambia. | `ui/theme.py`, `gui_app.py`, `tests/test_theme.py` |
+| `27c6688` | La lista pinta exportada, preview y desactualizada. El prefijo [✓] sigue en el texto y la selección no tapa el color. | `ui/theme.py`, `gui_app.py`, `tests/test_theme.py` |
 
 ## Pendiente, todavía no implementado
 
 - Manifiesto de serie dentro de una carpeta llamada `data/` (regla de portability, aún no portada). En `debian` el manifiesto sigue en la carpeta padre del episodio.
 - Opcional: ofrecer ocultar o filtrar líneas sin audio, del tipo «Captions made possible by...», al abrir un vídeo.
 - Escape de campos del TSV con `csv.writer`.
-- Rediseño oscuro de la ventana, con iconos.
+
+Los iconos usan QtSvg. El wheel de pip y Windows ya lo traen. En Debian, si PySide6 viene de apt, hace falta `python3-pyside6.qtsvg`. Sin ese módulo la aplicación arranca y los botones quedan solo con texto.
 
 Cada commit nuevo de funcionalidad en `debian` debe añadir aquí su hash y sus archivos.

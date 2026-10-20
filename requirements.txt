@@ -6,5 +6,6 @@ deepl
 google-genai
 
 # Interfaz gráfica (opcional; solo gui_app.py)
+# QtSvg viene en el wheel de pip y en Windows. En Debian por apt: python3-pyside6.qtsvg.
 PySide6
 python-mpv

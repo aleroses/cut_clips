@@ -108,9 +108,16 @@ pip install deepl --break-system-packages
 ├── parse_srt_preview.py   # CLI: SRT → preview CSV
 ├── inspect_media.py       # CLI: analyze tracks, extract subtitles
 ├── gui_app.py             # GUI: edit timings, preview, cut clips
+├── data/                  # Empty in git; optional place for videos
 ├── requirements.txt
 └── README.md
 ```
+
+## Working folder
+
+Put a series in `data/Serie/SxxExx/` and a movie in `data/Pelicula/`. The repository includes `data/` empty. Git ignores videos, subtitles, clips, projects, and the manifest added there, and keeps `data/.gitkeep` so the folder exists after a clone. Using `data/` is optional.
+
+A series writes `series_manifest.json` in the parent of the episode, for example `data/Serie/`. If the episode folder is named `data`, or its parent is the project root, the file stays inside the episode folder. It is never written in the project root. A movie does not read or write that file, in any folder.
 
 ## 0. Inspect Media (recommended first step)
 

@@ -225,7 +225,7 @@ Si el contenedor tiene título, ese título se inserta antes de `_anki.tsv` en l
 
 Si el proyecto ya tiene clips generados, cambiar el desplegable abre **Cambiar película o serie**. Esos clips conservan su ruta. Los clips nuevos usan el modo elegido. Si el TSV ya existe, no cambia de nombre.
 
-Una película no lee ni escribe `series_manifest.json`. Una serie lo guarda en la carpeta padre del episodio. Si se borra, se reconstruye en seco con:
+Conviene dejar las series en `data/Serie/SxxExx/` y las películas en `data/Pelicula/`. Una película no lee ni escribe `series_manifest.json`, en ninguna carpeta. Una serie lo guarda en la carpeta padre del episodio, por ejemplo `data/Serie/`. Si la carpeta del episodio se llama `data`, o si su padre es la raíz del proyecto, el archivo se queda dentro del episodio y no se escribe en la raíz. Si se borra, se reconstruye en seco con:
 
 ```bash
 python3 tools/rebuild_series_manifest.py --series-dir /ruta/a/la/serie --series-name Nombre

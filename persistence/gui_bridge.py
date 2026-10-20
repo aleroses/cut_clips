@@ -330,6 +330,10 @@ def reference_alignment_from_dict(data: dict | None) -> dict | None:
             restored["reference_cues"] = _reference_cues_from_list(raw_cues)
         else:
             restored.pop("reference_cues", None)
+    if "reference_path" in restored:
+        path = restored.get("reference_path")
+        if not isinstance(path, str) or not path:
+            restored.pop("reference_path", None)
     return restored
 
 

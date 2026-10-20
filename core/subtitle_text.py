@@ -1,6 +1,7 @@
 """Limpieza de texto de subtítulos para comparar, sin cambiar el parseo."""
 
 import difflib
+import os
 import re
 import unicodedata
 
@@ -57,6 +58,25 @@ def load_reference_cues(path, language: str = "en") -> list[dict]:
             "text": text,
         })
     return cues
+
+
+def reread_reference_cues(alignment: dict, language: str = "en") -> str | None:
+    """Relee el SRT externo si la ruta sigue en disco.
+
+    Devuelve la ruta ausente para avisar, o None si no hay nada que avisar.
+    No escribe el proyecto. Si la lectura falla, el mapa queda como estaba.
+    """
+    path = alignment.get("reference_path")
+    if not isinstance(path, str) or not path:
+        return None
+    if not os.path.isfile(path):
+        return path
+    try:
+        cues = load_reference_cues(path, language=language)
+    except OSError:
+        return path
+    alignment["reference_cues"] = cues
+    return None
 
 
 def reference_text_for_range(

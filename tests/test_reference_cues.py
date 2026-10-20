@@ -7,6 +7,7 @@ from core.subtitle_text import (
     load_reference_cues,
     reference_differences,
     reference_text_for_range,
+    reread_reference_cues,
 )
 
 
@@ -263,3 +264,79 @@ def test_low_match_returns_the_time_window_without_neighbors():
         {"start": 3.0, "end": 4.0, "text": "after"},
     ]
     assert align_reference_to_clip(clip, cues, 1.0, 2.0) == "alpha other words here"
+
+
+def test_reference_path_is_optional():
+    restored = reference_alignment_from_dict({
+        "checksum": "abc",
+        "cue_reference_text": {},
+        "differences": [],
+        "reference_path": "/tmp/ext.srt",
+    })
+    assert restored["reference_path"] == "/tmp/ext.srt"
+
+
+def test_invalid_reference_path_is_ignored():
+    restored = reference_alignment_from_dict({
+        "cue_reference_text": {"0": "viejo"},
+        "reference_path": 12,
+    })
+    assert "reference_path" not in restored
+    assert restored["cue_reference_text"][0] == "viejo"
+
+
+def test_old_dirty_text_is_kept_when_there_is_no_path():
+    alignment = {
+        "cue_reference_text": {1: "00:00:01,000 dirty"},
+        "differences": [],
+    }
+    assert reread_reference_cues(alignment) is None
+    assert alignment["cue_reference_text"][1] == "00:00:01,000 dirty"
+    assert "reference_cues" not in alignment
+
+
+def test_missing_srt_keeps_saved_cues(tmp_path):
+    missing = tmp_path / "gone.srt"
+    alignment = {
+        "reference_path": str(missing),
+        "reference_cues": [{"start": 1.0, "end": 2.0, "text": "guardado"}],
+        "cue_reference_text": {0: "00:00:01,000 dirty"},
+    }
+    assert reread_reference_cues(alignment) == str(missing)
+    assert alignment["reference_cues"] == [{
+        "start": 1.0,
+        "end": 2.0,
+        "text": "guardado",
+    }]
+    assert alignment["cue_reference_text"][0] == "00:00:01,000 dirty"
+
+
+def test_reread_loads_cleaned_cues(tmp_path):
+    path = tmp_path / "ref.srt"
+    path.write_bytes(SRT_BODY.encode("utf-8"))
+    alignment = {
+        "reference_path": str(path),
+        "reference_cues": [{"start": 9.0, "end": 9.5, "text": "viejo"}],
+    }
+    assert reread_reference_cues(alignment) is None
+    assert alignment["reference_cues"] == [{
+        "start": 1.0,
+        "end": 2.0,
+        "text": "El niño está en el café.",
+    }]
+
+
+def test_reread_oserror_keeps_saved_cues(tmp_path, monkeypatch):
+    path = tmp_path / "ref.srt"
+    path.write_text("x", encoding="utf-8")
+    alignment = {
+        "reference_path": str(path),
+        "reference_cues": [{"start": 1.0, "end": 2.0, "text": "guardado"}],
+    }
+
+    def boom(_path, language="en"):
+        raise OSError("nope")
+
+    monkeypatch.setattr("core.subtitle_text.load_reference_cues", boom)
+    assert reread_reference_cues(alignment) == str(path)
+    assert alignment["reference_cues"][0]["text"] == "guardado"

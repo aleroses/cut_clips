@@ -81,6 +81,7 @@ from core.subtitle_text import (
     align_reference_to_clip,
     load_reference_cues,
     reference_differences,
+    reread_reference_cues,
 )
 from media.probe import (
     probe, summarize_media, extract_subtitle, find_subtitle_stream,
@@ -904,6 +905,12 @@ class MainWindow(QMainWindow):
         if self._reevaluate_outdated_segments():
             self._refresh_list()
         self._publish_series_high_water()
+        missing_reference = None
+        if self.reference_alignment:
+            missing_reference = reread_reference_cues(
+                self.reference_alignment,
+                language=self.subtitle_language or "en",
+            )
         msg = f"Proyecto cargado: {os.path.basename(project_path)}"
         if self.reference_alignment:
             current_checksum = align_reference_text(self.cue_map, "")["checksum"]
@@ -912,6 +919,11 @@ class MainWindow(QMainWindow):
                     "  |  El texto de referencia guardado no coincide con los subtítulos "
                     "actuales, vuelve a cargarlo si lo necesitas"
                 )
+        if missing_reference:
+            msg += (
+                f"  |  No se encontró el SRT externo: {missing_reference}. "
+                "Se usa el texto guardado."
+            )
         if missing_video:
             msg += f"  |  Vídeo no encontrado: {state.video_path}"
         msg += self._series_numbering_status_suffix()
@@ -1948,6 +1960,7 @@ class MainWindow(QMainWindow):
             "cue_reference_text": {},
             "differences": differences,
             "reference_cues": cues,
+            "reference_path": os.path.abspath(path),
         }
         self._mark_project_modified()
         self._set_reference_panel_visible(True)

@@ -29,6 +29,7 @@ Temporada y episodio solo se ven en Serie.
 | `TBD-align` | Recorta el texto de referencia al diálogo del clip, por palabras. | `core/subtitle_parser.py`, `core/subtitle_text.py`, `tests/test_reference_cues.py` |
 | `TBD-editor` | La caja de referencia usa ese recorte y se actualiza al editar el texto. | `gui_app.py` |
 | `TBD-compare` | Las diferencias se calculan contra el texto recortado. Mayúsculas, puntuación y anotaciones SDH no cuentan. | `core/subtitle_text.py`, `gui_app.py`, `tests/test_reference_cues.py` |
+| `TBD-reread` | Guarda la ruta del SRT externo y, al abrir, lo relee si sigue en disco. | `core/subtitle_text.py`, `gui_app.py`, `persistence/gui_bridge.py`, `tests/test_reference_cues.py` |
 
 ## Pendiente, todavía no implementado
 

@@ -41,7 +41,7 @@ Temporada y episodio solo se ven en Serie.
 | `2baefa8` | El repositorio incluye `data/` vacía. Las series van en `data/Serie/SxxExx/` y las películas en `data/Pelicula/`. | `data/.gitkeep`, `.gitignore`, `README.md`, `docs/04-gui.md` |
 | `7ee661c` | Antes del primer clip, avisa si el manifiesto quedó por encima de los capítulos anteriores. Sí lo baja y deja una copia .bak. | `persistence/series_manifest.py`, `gui_app.py`, `tests/test_stale_manifest.py` |
 | `4098328` | Documenta que borrar los clips de prueba deja el manifiesto alto, y que `--force` no baja el número. | `docs/20-rebuild-series-manifest.md` |
-| `TBD-preview-marker` | La marca [PREVIEW] sigue en el clip que se está probando al elegir otra fila. Se quita al probar otra, al detener o al eliminar esa línea. | `core/preview_marker.py`, `gui_app.py`, `tests/test_preview_marker.py` |
+| `6258c71` | La marca [PREVIEW] sigue en el clip que se está probando al elegir otra fila. Se quita al probar otra, al detener o al eliminar esa línea. | `core/preview_marker.py`, `gui_app.py`, `tests/test_preview_marker.py` |
 
 ## Pendiente, todavía no implementado
 

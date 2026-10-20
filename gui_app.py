@@ -78,9 +78,9 @@ from core.naming import (
 from core.reference_alignment import align_reference_text
 from core.segment_selection import next_id_after_removal
 from core.subtitle_text import (
+    align_reference_to_clip,
     load_reference_cues,
     reference_differences,
-    reference_text_for_range,
 )
 from media.probe import (
     probe, summarize_media, extract_subtitle, find_subtitle_stream,
@@ -2451,6 +2451,7 @@ class MainWindow(QMainWindow):
             self._text_edit_undo_pending = True
         seg["text"] = new_text
         self._refresh_list(select_id=seg["id"])
+        self._update_reference_text_display(seg)
         self._mark_project_modified()
 
     def _update_cues_detail(self, seg):
@@ -2530,10 +2531,12 @@ class MainWindow(QMainWindow):
 
         indices = seg.get("cue_indices") or []
         if "reference_cues" in self.reference_alignment:
-            reference_text = reference_text_for_range(
+            reference_text = align_reference_to_clip(
+                str(seg.get("text") or ""),
                 self.reference_alignment.get("reference_cues") or [],
                 float(seg["start"]),
                 float(seg["end"]),
+                language=self.subtitle_language or "en",
             )
         else:
             if not indices:

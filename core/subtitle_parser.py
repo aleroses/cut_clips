@@ -220,6 +220,33 @@ def apply_boundary_trim(start, end, trim_start, trim_end, min_duration=0.3):
     return new_start, new_end
 
 
+SDH_ANNOTATION_MAX_WORDS = 4
+_VIDEO_MARKUP_RE = re.compile(r"</?(?:i|b|font)\b[^>]*>", re.IGNORECASE)
+_SHORT_PAREN_RE = re.compile(r"\(([^)]*)\)")
+_SHORT_BRACKET_RE = re.compile(r"\[([^\]]*)\]")
+
+
+def _without_short_annotation(match: re.Match) -> str:
+    if len(match.group(1).split()) <= SDH_ANNOTATION_MAX_WORDS:
+        return ""
+    return match.group(0)
+
+
+def clean_video_cue_text(raw_text: str, apply_punctuation_fix: bool = True) -> str:
+    """Quita etiquetas i/b/font y anotaciones SDH de hasta 4 palabras.
+
+    Un paréntesis o corchete más largo es diálogo y se conserva. No cambia
+    la normalización de mayúsculas: eso sigue en normalize_case.
+    """
+    text = _VIDEO_MARKUP_RE.sub("", raw_text or "")
+    text = _SHORT_PAREN_RE.sub(_without_short_annotation, text)
+    text = _SHORT_BRACKET_RE.sub(_without_short_annotation, text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if apply_punctuation_fix:
+        text = fix_punctuation_spacing(text)
+    return text
+
+
 def group_into_sentences(blocks, trim_start=0.0, trim_end=0.0,
                           language="en", apply_punctuation_fix=True):
     """Agrupa bloques consecutivos hasta encontrar puntuación de cierre.
@@ -235,7 +262,9 @@ def group_into_sentences(blocks, trim_start=0.0, trim_end=0.0,
     buffer_cue_indices = []
 
     for block_idx, block in enumerate(blocks):
-        cleaned = clean_text(block["raw_text"], apply_punctuation_fix=apply_punctuation_fix)
+        cleaned = clean_video_cue_text(
+            block["raw_text"], apply_punctuation_fix=apply_punctuation_fix
+        )
 
         if not cleaned:
             discarded += 1

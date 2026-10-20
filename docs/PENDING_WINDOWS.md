@@ -43,6 +43,7 @@ Temporada y episodio solo se ven en Serie.
 | `4098328` | Documenta que borrar los clips de prueba deja el manifiesto alto, y que `--force` no baja el número. | `docs/20-rebuild-series-manifest.md` |
 | `6258c71` | La marca [PREVIEW] sigue en el clip que se está probando al elegir otra fila. Se quita al probar otra, al detener o al eliminar esa línea. | `core/preview_marker.py`, `gui_app.py`, `tests/test_preview_marker.py` |
 | `55438a2` | El fondo de la fila seleccionada pasa de #3A3A52 a #4B4B6B. El texto conserva el color de preview, exportada o desactualizada. | `ui/theme.py`, `tests/test_theme.py` |
+| `TBD-sdh-video` | Al crear oraciones desde un SRT de vídeo, quita anotaciones SDH cortas y etiquetas i/b/font. Un proyecto guardado no cambia su texto ni su fingerprint. | `core/subtitle_parser.py`, `tests/test_sdh_annotations.py` |
 
 ## Pendiente, todavía no implementado
 

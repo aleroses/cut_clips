@@ -49,7 +49,7 @@ from dataclasses import replace
 # Sustituye por tu enlace real (Ko-fi, Buy Me a Coffee, etc.)
 DONATION_URL = "https://ko-fi.com/TU_USUARIO_AQUI"
 
-from PySide6.QtCore import Qt, QEvent, QRunnable, QThreadPool, Signal, QObject, QTimer, Slot
+from PySide6.QtCore import Qt, QEvent, QRunnable, QThreadPool, Signal, QObject, QTimer, QSize, Slot
 from PySide6.QtGui import QColor, QKeyEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
@@ -92,8 +92,20 @@ from ui.no_scroll_spinbox import NoScrollDoubleSpinBox
 from ui.mpv_embed import configure_mpv_environment, mpv_player_kwargs
 from ui.parser_options_widget import ParserOptions
 from ui.subtitle_load_dialog import SubtitleLoadDialog
+from ui.icons import ICON_SIZE, load_icon
 from ui.srt_split_dialog import SrtSplitDialog
-from ui.theme import apply_theme, apply_video_background
+from ui.theme import (
+    BORDER,
+    POSITIVE,
+    POSITIVE_HOVER,
+    PRIMARY,
+    PRIMARY_HOVER,
+    TEXT,
+    TEXT_DISABLED,
+    TEXT_SECONDARY,
+    apply_theme,
+    apply_video_background,
+)
 from ui.undo_stack import EditHistory
 from persistence.gui_bridge import (
     apply_outdated_status,
@@ -1444,14 +1456,35 @@ class MainWindow(QMainWindow):
 
         preview_main_row = QHBoxLayout()
         actions_col = QVBoxLayout()
-        self.preview_btn = QPushButton("🔁 Probar clip")
+        self.preview_btn = QPushButton("Probar clip")
         self.preview_btn.setObjectName("previewButton")
+        self._set_named_icon(
+            self.preview_btn,
+            "repeat",
+            normal=PRIMARY,
+            hover=PRIMARY_HOVER,
+            disabled=TEXT_DISABLED,
+        )
         self.preview_btn.clicked.connect(self.preview_selected_clip)
         actions_col.addWidget(self.preview_btn)
-        self.play_btn = QPushButton("⏸ Pausar")
+        self.play_btn = QPushButton("Pausar")
+        self._set_named_icon(
+            self.play_btn,
+            "pause",
+            normal=TEXT,
+            hover=TEXT_SECONDARY,
+            disabled=TEXT_DISABLED,
+        )
         self.play_btn.clicked.connect(self.toggle_play_pause)
         actions_col.addWidget(self.play_btn)
-        self.generate_btn = QPushButton("💾 Generar clip (WebM + MP3)")
+        self.generate_btn = QPushButton("Generar clip (WebM + MP3)")
+        self._set_named_icon(
+            self.generate_btn,
+            "save",
+            normal=PRIMARY,
+            hover=PRIMARY_HOVER,
+            disabled=TEXT_DISABLED,
+        )
         self.generate_btn.setObjectName("generateButton")
         self.generate_btn.clicked.connect(self.generate_selected_clip)
         actions_col.addWidget(self.generate_btn)
@@ -1584,7 +1617,14 @@ class MainWindow(QMainWindow):
         generate_layout.addWidget(padding_group)
 
         batch_row = QHBoxLayout()
-        self.batch_generate_btn = QPushButton("⚡ Generar todos pendientes")
+        self.batch_generate_btn = QPushButton("Generar todos pendientes")
+        self._set_named_icon(
+            self.batch_generate_btn,
+            "zap",
+            normal=POSITIVE,
+            hover=POSITIVE_HOVER,
+            disabled=TEXT_DISABLED,
+        )
         self.batch_generate_btn.setObjectName("batchGenerateButton")
         self.batch_generate_btn.clicked.connect(self.generate_all_pending)
         batch_row.addWidget(self.batch_generate_btn)
@@ -1689,7 +1729,7 @@ class MainWindow(QMainWindow):
         self.list_header_label = QLabel("Oraciones pendientes:")
         header_layout.addWidget(self.list_header_label, stretch=1)
         self.search_toggle_btn = QToolButton()
-        self.search_toggle_btn.setText("🔍")
+        self.search_toggle_btn.setText("Buscar")
         self.search_toggle_btn.setToolTip("Buscar en las oraciones")
         self.search_toggle_btn.setCheckable(True)
         self.search_toggle_btn.setAutoRaise(True)
@@ -1697,8 +1737,17 @@ class MainWindow(QMainWindow):
         self.search_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.search_toggle_btn.setStyleSheet(
             "QToolButton { border: none; padding: 0 4px; font-size: 13px; }"
-            "QToolButton:checked { background-color: #e7f1ff; border-radius: 3px; }"
+            f"QToolButton:checked {{ background-color: {BORDER}; border-radius: 6px; }}"
         )
+        self._set_named_icon(
+            self.search_toggle_btn,
+            "search",
+            normal=TEXT,
+            hover=TEXT_SECONDARY,
+            disabled=TEXT_DISABLED,
+        )
+        if not self.search_toggle_btn.icon().isNull():
+            self.search_toggle_btn.setText("")
         self.search_toggle_btn.toggled.connect(self._on_search_toggled)
         header_layout.addWidget(self.search_toggle_btn)
         right_layout.addWidget(header_row)
@@ -1727,11 +1776,20 @@ class MainWindow(QMainWindow):
         self.search_match_label.setStyleSheet("color: gray; font-size: 11px;")
         search_layout.addWidget(self.search_match_label)
         self.search_close_btn = QToolButton()
-        self.search_close_btn.setText("✕")
+        self.search_close_btn.setText("X")
         self.search_close_btn.setToolTip("Cerrar búsqueda")
         self.search_close_btn.setAutoRaise(True)
         self.search_close_btn.setMaximumHeight(26)
         self.search_close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._set_named_icon(
+            self.search_close_btn,
+            "x",
+            normal=TEXT,
+            hover=TEXT_SECONDARY,
+            disabled=TEXT_DISABLED,
+        )
+        if not self.search_close_btn.icon().isNull():
+            self.search_close_btn.setText("")
         self.search_close_btn.clicked.connect(self._close_segment_search)
         search_layout.addWidget(self.search_close_btn)
         self.search_bar.setVisible(False)
@@ -1783,7 +1841,14 @@ class MainWindow(QMainWindow):
         cues_layout.addWidget(self.outdated_diff_detail)
         right_layout.addWidget(cues_group)
 
-        self.donation_btn = QPushButton("☕ Cómprame un café (o un bug menos)")
+        self.donation_btn = QPushButton("Cómprame un café (un bug menos)")
+        self._set_named_icon(
+            self.donation_btn,
+            "coffee",
+            normal="#5C4033",
+            hover="#5C4033",
+            disabled=TEXT_DISABLED,
+        )
         self.donation_btn.setToolTip(
             "Cada donación corrige aproximadamente 0.5 bugs. Ayúdanos a llegar a 1."
         )
@@ -2955,16 +3020,52 @@ class MainWindow(QMainWindow):
         start, end = self._segment_bounds()
         return end > start
 
+    def _set_named_icon(
+        self,
+        button,
+        name: str,
+        *,
+        normal: str,
+        hover: str,
+        disabled: str,
+    ) -> None:
+        icon = load_icon(name, normal=normal, hover=hover, disabled=disabled)
+        if icon is None:
+            return
+        button.setIcon(icon)
+        button.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+
     def _update_play_button(self):
         if not self._segment_loop_active:
             self.play_btn.setEnabled(False)
-            self.play_btn.setText("⏸ Pausar")
+            self.play_btn.setText("Pausar")
+            self._set_named_icon(
+                self.play_btn,
+                "pause",
+                normal=TEXT,
+                hover=TEXT_SECONDARY,
+                disabled=TEXT_DISABLED,
+            )
             return
         self.play_btn.setEnabled(True)
         if self.player is not None and not self.player.pause:
-            self.play_btn.setText("⏸ Pausar")
+            self.play_btn.setText("Pausar")
+            self._set_named_icon(
+                self.play_btn,
+                "pause",
+                normal=TEXT,
+                hover=TEXT_SECONDARY,
+                disabled=TEXT_DISABLED,
+            )
         else:
-            self.play_btn.setText("▶ Reanudar")
+            self.play_btn.setText("Reanudar")
+            self._set_named_icon(
+                self.play_btn,
+                "play",
+                normal=TEXT,
+                hover=TEXT_SECONDARY,
+                disabled=TEXT_DISABLED,
+            )
 
     def _mark_segment_previewed(self, seg, start: float, end: float):
         self._preview_display_id = seg["id"]

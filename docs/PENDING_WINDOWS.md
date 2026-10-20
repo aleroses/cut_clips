@@ -33,6 +33,7 @@ Temporada y episodio solo se ven en Serie.
 | `936e18a` | Documenta el desplegable Película/Serie, los nombres de clip y TSV, el manifiesto y que Cargar externo acepta .txt, .md y .srt. | `docs/04-gui.md`, `docs/changelog.md` |
 | `TBD-theme-1` | Tema oscuro: paleta, estilo Fusion y hoja global. El vídeo embebido queda fuera del QSS, solo con fondo negro. | `ui/theme.py`, `gui_app.py`, `tests/test_theme.py` |
 | `TBD-theme-2` | Iconos Lucide y un helper que arma el QIcon en normal, hover y deshabilitado. Sin QtSvg la app arranca y el botón se queda en texto. | `assets/icons/`, `ui/icons.py`, `tests/test_icons.py` |
+| `TBD-theme-3` | Los botones dejan el emoji y usan icono: probar, pausar, generar, lote, buscar, cerrar y café. | `gui_app.py` |
 
 ## Pendiente, todavía no implementado
 

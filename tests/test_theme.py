@@ -57,6 +57,39 @@ def test_palette_uses_explicit_window_and_danger():
     assert danger == DANGER.lower()
 
 
+def test_sentence_foreground_keeps_the_current_priority():
+    from ui.theme import sentence_foreground
+
+    assert sentence_foreground("exported", preview=True) == PRIMARY
+    assert sentence_foreground("outdated", preview=True) == PRIMARY
+    assert sentence_foreground("outdated", preview=False) == ATTENTION
+    assert sentence_foreground("exported", preview=False) == POSITIVE
+    assert sentence_foreground("pending", preview=False) is None
+    assert sentence_foreground("preview", preview=False) is None
+
+
+def test_selected_row_keeps_its_status_color():
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import QApplication, QListWidget, QListWidgetItem, QStyleOptionViewItem
+
+    from ui.theme import POSITIVE, StatusColorDelegate
+
+    QApplication.instance() or QApplication([])
+    widget = QListWidget()
+    delegate = StatusColorDelegate(widget)
+    widget.setItemDelegate(delegate)
+    item = QListWidgetItem("[✓] exportada")
+    item.setForeground(QColor(POSITIVE))
+    widget.addItem(item)
+    option = QStyleOptionViewItem()
+    delegate.initStyleOption(option, widget.model().index(0, 0))
+    painted = option.palette.color(option.palette.ColorRole.HighlightedText).name()
+    assert painted == POSITIVE.lower()
+
+
 def test_side_panel_styles_use_the_palette():
     from ui.theme import (
         donation_button_style,

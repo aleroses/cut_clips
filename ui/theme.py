@@ -6,7 +6,9 @@ Qt 6 rechaza ``:not()`` y, si aparece, descarta la hoja completa; por eso
 ningún selector nombra ``QFrame``, ``QOpenGLWidget`` ni ``#mpvVideo``.
 """
 
-from PySide6.QtGui import QColor, QPalette
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QBrush, QColor, QPalette
+from PySide6.QtWidgets import QStyledItemDelegate
 
 WINDOW = "#1E1E2E"
 SURFACE = "#28283C"
@@ -235,6 +237,32 @@ def fingerprint_difference_style() -> str:
         " font-size: 11px;"
         "}"
     )
+
+
+def sentence_foreground(status: str, *, preview: bool) -> str | None:
+    """Color de la fila. La preview visible gana sobre el estado guardado."""
+    if preview:
+        return PRIMARY
+    if status == "outdated":
+        return ATTENTION
+    if status == "exported":
+        return POSITIVE
+    return None
+
+
+class StatusColorDelegate(QStyledItemDelegate):
+    """La selección conserva el color de estado en lugar de un texto único."""
+
+    def initStyleOption(self, option, index) -> None:
+        super().initStyleOption(option, index)
+        foreground = index.data(Qt.ItemDataRole.ForegroundRole)
+        if foreground is None:
+            return
+        color = foreground.color() if isinstance(foreground, QBrush) else QColor(foreground)
+        if not color.isValid():
+            return
+        option.palette.setColor(QPalette.ColorRole.Text, color)
+        option.palette.setColor(QPalette.ColorRole.HighlightedText, color)
 
 
 def apply_theme(app) -> None:

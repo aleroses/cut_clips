@@ -50,7 +50,7 @@ from dataclasses import replace
 DONATION_URL = "https://ko-fi.com/TU_USUARIO_AQUI"
 
 from PySide6.QtCore import Qt, QEvent, QRunnable, QThreadPool, Signal, QObject, QTimer, QSize, Slot
-from PySide6.QtGui import QKeyEvent, QKeySequence, QShortcut
+from PySide6.QtGui import QColor, QKeyEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QListWidget, QListWidgetItem, QPushButton, QLabel, QDoubleSpinBox,
@@ -104,12 +104,14 @@ from ui.theme import (
     TEXT,
     TEXT_DISABLED,
     TEXT_SECONDARY,
+    StatusColorDelegate,
     apply_theme,
     apply_video_background,
     donation_button_style,
     fingerprint_difference_style,
     note_style,
     reference_difference_style,
+    sentence_foreground,
     search_active_style,
     search_toggle_style,
 )
@@ -1805,6 +1807,7 @@ class MainWindow(QMainWindow):
         self.search_reference_checkbox.toggled.connect(self._apply_search_filter_now)
 
         self.segment_list = QListWidget()
+        self.segment_list.setItemDelegate(StatusColorDelegate(self.segment_list))
         self.segment_list.currentRowChanged.connect(self.on_segment_selected)
         right_layout.addWidget(self.segment_list)
 
@@ -2270,12 +2273,12 @@ class MainWindow(QMainWindow):
                     label = self._segment_list_label(seg)
                     item = QListWidgetItem(label)
                     item.setData(Qt.UserRole, seg["id"])
-                    if seg["id"] == self._preview_display_id:
-                        item.setForeground(Qt.darkGreen)
-                    elif seg["status"] == "outdated":
-                        item.setForeground(Qt.darkYellow)
-                    elif seg["status"] == "exported":
-                        item.setForeground(Qt.darkCyan)
+                    color = sentence_foreground(
+                        seg["status"],
+                        preview=seg["id"] == self._preview_display_id,
+                    )
+                    if color:
+                        item.setForeground(QColor(color))
                     self.segment_list.addItem(item)
 
                 exported = self._exported_count()

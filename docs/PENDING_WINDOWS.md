@@ -38,7 +38,7 @@ Temporada y episodio solo se ven en Serie.
 | `27c6688` | La lista pinta exportada, preview y desactualizada. El prefijo [✓] sigue en el texto y la selección no tapa el color. | `ui/theme.py`, `gui_app.py`, `tests/test_theme.py` |
 | `4a93df0` | Degradado y padding en los botones, cabeceras más marcadas y el café como único botón relleno. | `ui/theme.py`, `gui_app.py`, `tests/test_theme.py`, `tests/test_icons.py` |
 | `e2082a9` | El manifiesto de una serie no se escribe en la raíz del proyecto. Un vídeo suelto en `data/` lo deja dentro de `data/`. | `persistence/series_manifest.py`, `tools/rebuild_series_manifest.py`, `tests/test_series_manifest.py`, `tests/test_rebuild_series_manifest.py`, `docs/20-rebuild-series-manifest.md` |
-| `TBD-data` | El repositorio incluye `data/` vacía. Las series van en `data/Serie/SxxExx/` y las películas en `data/Pelicula/`. | `data/.gitkeep`, `.gitignore`, `README.md`, `docs/04-gui.md` |
+| `2baefa8` | El repositorio incluye `data/` vacía. Las series van en `data/Serie/SxxExx/` y las películas en `data/Pelicula/`. | `data/.gitkeep`, `.gitignore`, `README.md`, `docs/04-gui.md` |
 
 ## Pendiente, todavía no implementado
 

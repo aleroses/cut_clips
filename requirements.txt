@@ -7,5 +7,6 @@ google-genai
 
 # Interfaz gráfica (opcional; solo gui_app.py)
 # QtSvg viene en el wheel de pip y en Windows. En Debian por apt: python3-pyside6.qtsvg.
+# Sistema (Debian/Ubuntu/Pop!_OS): libmpv2 + libxcb-cursor0 (Qt 6.5+ / plugin xcb).
 PySide6
 python-mpv

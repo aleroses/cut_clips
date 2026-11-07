@@ -29,72 +29,44 @@ La rama `debian` tiene cambios que todavía no están en la rama de Windows. La 
 
 You need the following:
 
-- Python 3
+- Python 3.10+ (3.12 on Pop!_OS / Ubuntu 24.04 is fine)
 - FFmpeg and ffprobe
 - Anki for importing the generated `.tsv` file
 
-Optional:
+For the GUI (Debian / Ubuntu / Pop!_OS):
 
-- **DeepL** — automatic translation (`pip install deepl`); requires API key only when using `--translate`
-- **GUI** — PySide6, python-mpv, and system libmpv (see [Graphical editor](#graphical-editor-gui_apppy))
+- `libmpv2` (or `libmpv1` on older releases) — embedded preview
+- `libxcb-cursor0` — required by Qt 6.5+ for the `xcb` platform plugin (needed on Wayland/XWayland)
 
-Install Python dependencies:
+Optional translation (CLI `--translate` or GUI export):
 
-```bash
-pip install -r requirements.txt --break-system-packages
-```
+- **DeepL** (`deepl`) — `DEEPL_API_KEY` or key saved in the GUI
+- **Gemini** (`google-genai`) — `GEMINI_API_KEY` or key saved in the GUI
 
-On Debian/Ubuntu for GUI preview:
-
-```bash
-sudo apt install libmpv2   # or libmpv1 depending on your release
-```
-
-## Installation
-
-### 1. Install Python 3
-
-Check whether Python 3 is already installed:
-
-```bash
-python3 --version
-```
-
-If Python 3 is not installed, install it using your system's package manager.
-
-On Debian/Ubuntu:
+## Installation (Debian / Ubuntu / Pop!_OS)
 
 ```bash
 sudo apt update
-sudo apt install python3 python3-pip
+sudo apt install -y python3 python3-pip python3-venv ffmpeg libmpv2 libxcb-cursor0
+
+cd /path/to/cut_clips
+python3 -m venv .venv
+.venv/bin/pip install --upgrade pip
+.venv/bin/pip install -r requirements.txt
 ```
 
-### 2. Install FFmpeg
+`requirements.txt` installs `deepl`, `google-genai`, `PySide6`, and `python-mpv`.
 
-Check whether FFmpeg is already installed:
+> Prefer a virtual environment. Installing with system `pip … --break-system-packages` works but mixes project packages into the OS Python.
+
+Quick GUI start after setup, from the project directory:
 
 ```bash
-ffmpeg -version
+./run_gui.sh
+# or: .venv/bin/python gui_app.py
 ```
 
-On Debian/Ubuntu:
-
-```bash
-sudo apt update
-sudo apt install ffmpeg
-```
-
-### 3. Install the DeepL Python Library
-
-The project uses the official DeepL Python library to communicate with the DeepL API.
-
-Install it with:
-
-```bash
-pip install deepl --break-system-packages
-```
-
-> **Note:** On Debian-based systems, `--break-system-packages` may be required when installing Python packages globally with `pip`. Using a Python virtual environment is recommended if you want to avoid modifying the system Python environment.
+On Pop!_OS a double-click opens `run_gui.sh` in an editor. From the project folder, `./run_gui.sh` opens the GUI. Dragging `run_gui.sh` onto a terminal does the same.
 
 ## Basic Structure
 
@@ -108,6 +80,7 @@ pip install deepl --break-system-packages
 ├── parse_srt_preview.py   # CLI: SRT → preview CSV
 ├── inspect_media.py       # CLI: analyze tracks, extract subtitles
 ├── gui_app.py             # GUI: edit timings, preview, cut clips
+├── run_gui.sh             # Launch GUI with the project .venv
 ├── data/                  # Empty in git; optional place for videos
 ├── requirements.txt
 └── README.md
@@ -143,15 +116,20 @@ with mpv (A–B loop), merge/delete lines, cut individual clips, and export TSV 
 without editing CSV in LibreOffice.
 
 ```bash
-python3 gui_app.py
+./run_gui.sh
+# equivalent: .venv/bin/python gui_app.py
 ```
+
+Use the project venv Python. Plain `python3 gui_app.py` fails with `No module named 'PySide6'` if packages were only installed in `.venv`.
+
+On Pop!_OS, double-clicking the script opens the source. Run `./run_gui.sh` in the project directory, or drag `run_gui.sh` onto a terminal, and the interface opens.
 
 Flow: **File → Open video** → review track dialog (ffprobe) →
 **Open subtitle (.srt)** or **Extract subtitles from video** (with parser options) →
 adjust times → **Cut** → **Export TSV**.
 
-Requires PySide6, python-mpv, and libmpv. Preview works without cutting; translation
-at export is optional (DeepL API key or `DEEPL_API_KEY` env var).
+Requires PySide6, python-mpv, libmpv, and `libxcb-cursor0`. Preview works without
+cutting; translation at export is optional (DeepL and/or Gemini API keys).
 
 ## 1. Extract Subtitles and Create the Preview File
 

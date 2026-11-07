@@ -5,10 +5,17 @@ Documentación de la aplicación PySide6 (`gui_app.py`).
 ## Arranque
 
 ```bash
-python3 gui_app.py
+./run_gui.sh
+# equivalente: .venv/bin/python gui_app.py
 ```
 
-Requisitos: PySide6, python-mpv, libmpv, ffmpeg/ffprobe. Los iconos usan QtSvg: en Debian por apt, `python3-pyside6.qtsvg`. El wheel de pip y Windows ya lo traen. Sin QtSvg la ventana arranca y los botones quedan solo con texto.
+Desde la carpeta del proyecto, `./run_gui.sh` abre la interfaz. En Pop!_OS el doble clic abre el código del script. Arrastrar `run_gui.sh` a la terminal también abre la interfaz.
+
+Requisitos Python (venv recomendado): PySide6, python-mpv, deepl, google-genai (`pip install -r requirements.txt`).
+
+Requisitos de sistema (Debian/Ubuntu/Pop!_OS): `ffmpeg`/`ffprobe`, `libmpv2` (o `libmpv1`), y **`libxcb-cursor0`** (Qt 6.5+ necesita este paquete para el plugin `xcb`; sin él la GUI aborta al arrancar).
+
+Los iconos usan QtSvg: en Debian por apt, `python3-pyside6.qtsvg`. El wheel de pip y Windows ya lo traen. Sin QtSvg la ventana arranca y los botones quedan solo con texto.
 
 ## Flujo principal
 
@@ -281,11 +288,13 @@ los clips ya generados pasan a **`[OUTDATED]`** (amarillo en la lista).
 Desde la raíz del proyecto:
 
 ```bash
-cd /home/ale/Documents/projects/anki_video_tool
-pip install -r requirements.txt   # PySide6, python-mpv, deepl (opcional)
-sudo apt install ffmpeg libmpv2 python3-pyside6.qtsvg    # ffprobe, ffmpeg, mpv, iconos
+sudo apt install -y python3-venv ffmpeg libmpv2 libxcb-cursor0
+# Opcional si PySide6 viene de apt: python3-pyside6.qtsvg
 
-python3 gui_app.py
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt   # PySide6, python-mpv, deepl, google-genai
+
+./run_gui.sh
 ```
 
 ### Pasos en la interfaz

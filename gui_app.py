@@ -6,12 +6,14 @@ Fase 2 del pipeline Anki-Video: interfaz gráfica para revisar, fusionar,
 eliminar y ajustar los tiempos de cada oración, y cortar los clips sin
 tener que editar el CSV a mano.
 
-Requiere:
-    sudo apt install libmpv2   # (o libmpv1, según tu versión de Debian)
-    pip install PySide6 python-mpv --break-system-packages
+Requiere (Debian/Ubuntu/Pop!_OS):
+    sudo apt install libmpv2 libxcb-cursor0   # libmpv1 en releases antiguos
+    # libxcb-cursor0: plugin Qt xcb (Qt 6.5+); sin él la GUI no arranca
+    python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 Uso:
-    python3 gui_app.py
+    ./run_gui.sh
+    # o: .venv/bin/python gui_app.py
 
 Flujo:
     1. Archivo > Abrir vídeo... (mkv/mp4/webm) — diálogo ffprobe de pistas
@@ -1984,7 +1986,7 @@ class MainWindow(QMainWindow):
                     self, "python-mpv no disponible",
                     "No se pudo cargar 'mpv' (revisa que libmpv esté instalado:\n"
                     "  sudo apt install libmpv2\n"
-                    "  pip install python-mpv --break-system-packages\n\n"
+                    "  .venv/bin/pip install python-mpv\n\n"
                     "Podrás seguir editando tiempos y cortando, pero sin previsualización."
                 )
 
